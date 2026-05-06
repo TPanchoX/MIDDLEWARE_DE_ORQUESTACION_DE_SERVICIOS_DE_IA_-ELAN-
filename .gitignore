@@ -1,0 +1,51 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+.venv*/
+venv/
+env/
+ENV/
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# IDE and OS files
+.vscode/
+.idea/
+*.code-workspace
+.DS_Store
+Thumbs.db
+
+# Build and packaging output
+build/
+dist/
+*.egg-info/
+
+# Runtime/model artifacts generated or installed locally
+middleware/app/models_store/*
+!middleware/app/models_store/
+!middleware/app/models_store/installed/
+middleware/app/models_store/installed/*
+!middleware/app/models_store/installed/.gitkeep
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.safetensors
+
+# Local media/dataset artifacts
+*.mp4
+*.avi
+*.mov
+*.mkv

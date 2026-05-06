@@ -1,0 +1,24 @@
+from pydantic import BaseModel, Field
+
+
+class StageMetrics(BaseModel):
+    video_loading_ms: int = Field(default=0, ge=0)
+    frame_sampling_ms: int = Field(default=0, ge=0)
+    preprocessing_ms: int = Field(default=0, ge=0)
+    window_building_ms: int = Field(default=0, ge=0)
+    total_video_processing_ms: int = Field(default=0, ge=0)
+    model_load_ms: int = Field(default=0, ge=0)
+    tensor_conversion_ms: int = Field(default=0, ge=0)
+    aggregation_ms: int = Field(default=0, ge=0)
+    validation_ms: int = Field(default=0, ge=0)
+    queue_ms: int = Field(default=0, ge=0)
+    inference_ms: int = Field(default=0, ge=0)
+    postprocessing_ms: int = Field(default=0, ge=0)
+    keypoint_extraction_ms: int = Field(default=0, ge=0)
+    bio_model_load_ms: int = Field(default=0, ge=0)
+    gloss_model_load_ms: int = Field(default=0, ge=0)
+    vocab_load_ms: int = Field(default=0, ge=0)
+    bio_inference_ms: int = Field(default=0, ge=0)
+    bio_postprocessing_ms: int = Field(default=0, ge=0)
+    gloss_classification_ms: int = Field(default=0, ge=0)
+    total_ms: int = Field(default=0, ge=0)

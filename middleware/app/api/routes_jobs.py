@@ -11,7 +11,13 @@ router = APIRouter(tags=["jobs"])
 @router.post(
     "/jobs/segment-video",
     response_model=SegmentVideoResponse,
-    responses={404: {"model": ErrorResponse}},
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
+        501: {"model": ErrorResponse},
+    },
 )
 def create_segment_video_job(payload: SegmentVideoRequest) -> SegmentVideoResponse:
     return job_service.create_segment_video_job(request=payload)

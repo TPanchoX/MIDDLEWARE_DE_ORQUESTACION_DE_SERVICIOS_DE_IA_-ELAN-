@@ -11,6 +11,7 @@ class Settings(BaseModel):
     app_host: str = Field(default="127.0.0.1")
     app_port: int = Field(default=8000)
     log_level: str = Field(default="INFO")
+    models_store_dir: str | None = Field(default=None)
 
 
 @lru_cache(maxsize=1)
@@ -22,4 +23,5 @@ def get_settings() -> Settings:
         app_host=os.getenv("MIDDLEWARE_HOST", "127.0.0.1"),
         app_port=int(os.getenv("MIDDLEWARE_PORT", "8000")),
         log_level=os.getenv("MIDDLEWARE_LOG_LEVEL", "INFO").upper(),
+        models_store_dir=os.getenv("MIDDLEWARE_MODELS_STORE_DIR"),
     )

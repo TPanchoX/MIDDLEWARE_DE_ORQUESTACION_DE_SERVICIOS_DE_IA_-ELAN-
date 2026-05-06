@@ -8,9 +8,14 @@ from app.api.routes_jobs import router as jobs_router
 from app.api.routes_models import router as models_router
 from app.core.config import get_settings
 from app.core.logging_config import configure_logging
+from app.processing.video_loader import VideoProcessingError
+from app.processing.keypoints.mediapipe_keypoint_extractor import MediaPipeKeypointError
+from app.runners.keypoint_pipeline_runner import KeypointPipelineRunnerError
+from app.runners.native_pytorch_runner import PyTorchRunnerError
+from app.runners.runner_selector import RunnerSelectionError
 from app.schemas.common import ErrorResponse
 from app.services.job_service import JobNotFoundError
-from app.services.model_registry_service import ModelNotFoundError
+from app.services.model_registry_service import ModelRegistryError
 
 
 configure_logging()
@@ -20,15 +25,55 @@ settings = get_settings()
 app = FastAPI(
     title=settings.service_name,
     version=settings.service_version,
-    description="Local FastAPI middleware for ELAN AI orchestration - Phase 1 base.",
+    description="Local FastAPI middleware for ELAN AI orchestration.",
 )
 
 
-@app.exception_handler(ModelNotFoundError)
-async def handle_model_not_found(_: Request, exc: ModelNotFoundError) -> JSONResponse:
+@app.exception_handler(ModelRegistryError)
+async def handle_model_registry_error(_: Request, exc: ModelRegistryError) -> JSONResponse:
     return JSONResponse(
-        status_code=404,
-        content=ErrorResponse(error_code="model_not_found", detail=str(exc)).model_dump(),
+        status_code=exc.status_code,
+        content=ErrorResponse(error_code=exc.error_code, detail=str(exc)).model_dump(),
+    )
+
+
+@app.exception_handler(RunnerSelectionError)
+async def handle_runner_selection_error(_: Request, exc: RunnerSelectionError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=ErrorResponse(error_code=exc.error_code, detail=str(exc)).model_dump(),
+    )
+
+
+@app.exception_handler(VideoProcessingError)
+async def handle_video_processing_error(_: Request, exc: VideoProcessingError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=ErrorResponse(error_code=exc.error_code, detail=str(exc)).model_dump(),
+    )
+
+
+@app.exception_handler(PyTorchRunnerError)
+async def handle_pytorch_runner_error(_: Request, exc: PyTorchRunnerError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=ErrorResponse(error_code=exc.error_code, detail=str(exc)).model_dump(),
+    )
+
+
+@app.exception_handler(KeypointPipelineRunnerError)
+async def handle_keypoint_pipeline_runner_error(_: Request, exc: KeypointPipelineRunnerError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=ErrorResponse(error_code=exc.error_code, detail=str(exc)).model_dump(),
+    )
+
+
+@app.exception_handler(MediaPipeKeypointError)
+async def handle_mediapipe_keypoint_error(_: Request, exc: MediaPipeKeypointError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=ErrorResponse(error_code=exc.error_code, detail=str(exc)).model_dump(),
     )
 
 
@@ -36,7 +81,7 @@ async def handle_model_not_found(_: Request, exc: ModelNotFoundError) -> JSONRes
 async def handle_job_not_found(_: Request, exc: JobNotFoundError) -> JSONResponse:
     return JSONResponse(
         status_code=404,
-        content=ErrorResponse(error_code="job_not_found", detail=str(exc)).model_dump(),
+        content=ErrorResponse(error_code="JOB_NOT_FOUND", detail=str(exc)).model_dump(),
     )
 
 
@@ -46,7 +91,7 @@ async def handle_unexpected_error(_: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(
         status_code=500,
         content=ErrorResponse(
-            error_code="internal_server_error",
+            error_code="INTERNAL_SERVER_ERROR",
             detail="An unexpected internal error occurred.",
         ).model_dump(),
     )
