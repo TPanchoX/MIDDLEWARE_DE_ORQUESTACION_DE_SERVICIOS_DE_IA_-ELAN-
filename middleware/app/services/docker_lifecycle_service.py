@@ -79,7 +79,7 @@ class DockerLifecycleService:
         model_id: str,
         model_version: str,
         backend_config: dict,
-        videos_dir: Path | None = None,
+        videos_dir: str | None = None,
     ) -> None:
         """
         Build a Docker image from *install_path*/backend/Dockerfile
@@ -326,10 +326,16 @@ class DockerLifecycleService:
             ) from exc
 
     @staticmethod
-    def _build_volumes(videos_dir: Path | None) -> dict | None:
-        if videos_dir is None:
+    def _build_volumes(videos_dir: str | None) -> dict | None:
+        if not videos_dir:
             return None
-        return {str(videos_dir.resolve()): {"bind": "/data/videos", "mode": "ro"}}
+        # Use the raw string as-is — do NOT resolve() or convert to a Linux Path.
+        # MIDDLEWARE_VIDEOS_DIR is a host path (possibly a Windows path like
+        # "C:/Users/…").  Calling Path().resolve() inside the Linux container would
+        # prepend the container CWD (/app), breaking Docker's bind-mount parser.
+        # Docker Desktop receives the raw string and translates it correctly to the
+        # Windows host filesystem.
+        return {videos_dir: {"bind": "/data/videos", "mode": "ro"}}
 
 
 # Singleton used by ModelRegistryService

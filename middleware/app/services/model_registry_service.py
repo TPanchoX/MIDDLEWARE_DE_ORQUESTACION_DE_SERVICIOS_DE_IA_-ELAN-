@@ -243,6 +243,11 @@ class ModelRegistryService:
             install_path = Path(self.resolve_install_path(model))
             self._auto_start_docker_backend(model=model, manifest=manifest, install_path=install_path)
 
+        # Guardar el manifest.json en bootstrap_manifests_dir para que el
+        # middleware pueda re-registrar el modelo automáticamente en el próximo
+        # arranque, incluso si el registry.json principal se pierde.
+        self._save_bootstrap_manifest(model)
+
         logger.info("Installed model '%s' version '%s'.", model.model_id, model.version)
         return ModelInstallResponse(message="Model installed successfully.", model=model)
 
@@ -254,7 +259,14 @@ class ModelRegistryService:
     ) -> None:
         """Build Docker image and start container for a self-contained model package."""
         settings = get_settings()
-        videos_dir = Path(settings.videos_dir).resolve() if settings.videos_dir else None
+        # Pass the raw string from the env var — do NOT convert to Path nor call
+        # .resolve().  The middleware runs inside a Linux container where a Windows
+        # host path like "C:/Users/…" is not a valid absolute path; Path().resolve()
+        # would prepend the container's CWD (/app) producing "/app/C:/Users/…",
+        # which makes Docker fail with "too many colons" when used as a bind-mount
+        # source.  Docker Desktop on Windows translates the raw "C:/…" string
+        # correctly when it receives it as the host-side mount source.
+        videos_dir: str | None = settings.videos_dir if settings.videos_dir else None
 
         backend_config: dict = {}
         if manifest.model_extra:
@@ -560,6 +572,43 @@ class ModelRegistryService:
 
     def _utc_now(self) -> str:
         return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+    def _save_bootstrap_manifest(self, model: InstalledModel) -> None:
+        """Copia el manifest.json del modelo al directorio de bootstrap.
+
+        Esto garantiza que el modelo se registre automáticamente en el próximo
+        arranque del middleware (vía ``_bootstrap_docker_manifests``), incluso
+        si el ``registry.json`` principal se pierde (p.ej. borrado de volúmenes
+        Docker).  Solo aplica a modelos Docker con ``bootstrap_manifests_dir``
+        configurado.
+        """
+        if self.bootstrap_manifests_dir is None:
+            return
+        if model.runtime.mode != "docker":
+            return
+
+        try:
+            self.bootstrap_manifests_dir.mkdir(parents=True, exist_ok=True)
+            dest = self.bootstrap_manifests_dir / f"{model.model_id}__{model.version}.json"
+            # Serializar el manifiesto (solo los campos del ManifestModel, no status/install_path)
+            manifest_data = {
+                k: v for k, v in model.model_dump(mode="json").items()
+                if k not in {"status", "installed_at", "install_path", "source"}
+            }
+            dest.write_text(
+                json.dumps(manifest_data, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            logger.info(
+                "Bootstrap manifest saved for model '%s' v%s at '%s'.",
+                model.model_id, model.version, dest,
+            )
+        except OSError as exc:
+            # No interrumpir la instalación si el bootstrap falla
+            logger.warning(
+                "Could not save bootstrap manifest for model '%s': %s",
+                model.model_id, exc,
+            )
 
 
 model_registry_service = ModelRegistryService()

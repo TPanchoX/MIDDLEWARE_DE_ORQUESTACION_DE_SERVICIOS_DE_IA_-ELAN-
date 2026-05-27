@@ -12,25 +12,34 @@ services:
       MIDDLEWARE_LOG_LEVEL: INFO
       MIDDLEWARE_RUNTIME_PROFILE: final
       MIDDLEWARE_MODELS_STORE_DIR: /app/data/models_store
+      # Bootstrap: on every startup the middleware scans this directory and
+      # auto-registers any manifest.json found there.  Combined with the bind
+      # mount below, installed model manifests survive even a full volume reset.
+      MIDDLEWARE_BOOTSTRAP_MANIFESTS_DIR: /app/data/bootstrap_manifests
       # Directory on the HOST where videos are stored.
       # Mounted read-only at /data/videos inside every model container.
       # Use forward slashes even on Windows (Docker Desktop translates them).
-      # Example: C:/Users/yourname/Videos
       MIDDLEWARE_VIDEOS_DIR: "C:/Users/imbaq/OneDrive/Desktop"
       # Shared Docker network used for container-to-container communication.
       # Model containers are attached to this network so the middleware can
       # reach them by container name (no host-port mapping required).
       MIDDLEWARE_DOCKER_NETWORK: elan-ai-shared
     volumes:
-      - middleware_models:/app/data/models_store
+      # BIND MOUNTS — these live on the host filesystem and are NEVER removed
+      # by "docker-compose down -v", "docker volume prune" or Docker Desktop.
+      # The registry (registry.json) and all installed model files persist here.
+      - ./data/models_store:/app/data/models_store
+      # Bootstrap manifests: model manifests are copied here on install so that
+      # the middleware can re-register models automatically on the next startup
+      # even if the main registry is somehow lost.
+      - ./data/bootstrap_manifests:/app/data/bootstrap_manifests
       # Mount the Docker socket so the middleware can build/run model containers.
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - shared
     restart: unless-stopped
 
-volumes:
-  middleware_models:
+# No named volumes — everything is on the host filesystem via bind mounts.
 
 networks:
   shared:

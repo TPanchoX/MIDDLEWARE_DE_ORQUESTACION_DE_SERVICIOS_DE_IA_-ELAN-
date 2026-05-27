@@ -137,9 +137,13 @@ class DockerRunner(BaseRunner):
         }
 
     def _build_payload(self, request: InferenceInput) -> dict[str, Any]:
+        settings = get_settings()
+        container_media_path = self._translate_media_path(
+            request.media_path, settings.videos_dir
+        )
         return {
             "job_id": request.job_id,
-            "media": {"path": request.media_path},
+            "media": {"path": container_media_path},
             "annotation": request.annotation,
             "parameters": request.parameters,
             "model": {
@@ -152,6 +156,38 @@ class DockerRunner(BaseRunner):
                 "timeout_sec": request.timeout_sec,
             },
         }
+
+    @staticmethod
+    def _translate_media_path(host_path: str, videos_dir: str | None) -> str:
+        """Traduce un path del host al path equivalente dentro del contenedor Docker.
+
+        El runner monta ``videos_dir`` (host) como ``/data/videos`` (contenedor,
+        solo lectura).  Este método reemplaza el prefijo del host por el punto de
+        montaje del contenedor para que el backend pueda abrir el archivo de video.
+
+        Ejemplos
+        --------
+        host_path  = "C:/Users/user/Desktop/video.mp4"
+        videos_dir = "C:/Users/user/Desktop"
+        → "/data/videos/video.mp4"
+
+        Si el path no está dentro de ``videos_dir``, se devuelve sin cambios y el
+        backend recibirá el path original (puede fallar si no está montado).
+
+        La comparación de prefijos es insensible a mayúsculas para ser robusta
+        con paths de Windows.
+        """
+        if not videos_dir or not videos_dir.strip():
+            return host_path
+
+        norm_dir  = videos_dir.strip().rstrip("/\\").replace("\\", "/")
+        norm_path = host_path.replace("\\", "/")
+
+        if norm_path.lower().startswith(norm_dir.lower() + "/"):
+            relative = norm_path[len(norm_dir):]   # ya incluye la barra inicial
+            return "/data/videos" + relative
+
+        return host_path
 
     def _adapt_response(self, *, payload: dict[str, Any], metrics: StageMetrics) -> InferenceOutput:
         if "segments" in payload:
