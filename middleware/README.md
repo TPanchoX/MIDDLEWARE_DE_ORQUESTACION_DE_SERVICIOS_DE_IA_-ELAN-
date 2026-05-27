@@ -1,270 +1,295 @@
-# Middleware FastAPI - Fases 1 a 7
+# Middleware FastAPI - Version Final Docker
 
-Middleware local para orquestar modelos de IA desde ELAN sin acoplar ELAN a
-Python, PyTorch, CUDA o Docker. Las fases actuales cubren API base, registry de
-modelos, runner dummy, procesamiento real de video, ejecucion nativa PyTorch y
-pipeline compuesto BIO + Keypoint Transformer.
+Middleware de orquestacion para conectar ELAN con backends de modelos de IA sin
+acoplar ELAN ni el middleware a PyTorch, MediaPipe, BIO, CUDA u otra
+arquitectura concreta de modelo.
 
-## Alcance actual
-
-- FastAPI con endpoints de salud, modelos y jobs.
-- Registry persistente en `app/models_store/registry.json`.
-- Instalacion de modelos por paquetes zip con `manifest.json`.
-- Procesamiento real de video con OpenCV y NumPy.
-- Ventanas temporales `T,H,W,C` con frames RGB `float32`.
-- `DummyRunner` para simulacion.
-- `NativePyTorchRunner` para modelos `runtime.mode=native` y
-  `runtime.framework=pytorch`.
-- `KeypointPipelineRunner` para modelos con
-  `runtime.runner=keypoint_pipeline`.
-- Arquitectura base `VideoBinarySegmenter`.
-- Arquitecturas `BioSegmenterBiLSTM` y `KeypointTransformerClassifierV11`.
-- Agregacion de probabilidades por frame global.
-- Postprocesamiento temporal compartido para generar segmentos.
-- Extraccion de keypoints reales con MediaPipe Holistic.
-- Postprocesamiento BIO y clasificacion de glosas top-k.
-
-## Fuera de alcance todavia
-
-- Docker runner.
-- Integracion ELAN real.
-- Generacion de archivos EAF.
-- Base de datos.
-
-## Instalacion
-
-```bash
-cd middleware
-pip install -r requirements.txt
-```
-
-## Ejecucion
-
-```bash
-uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-## Preparar datos de prueba
-
-Crear video artificial:
-
-```bash
-python scripts/create_test_video.py
-```
-
-Crear paquetes PyTorch de ejemplo compatible e incompatible:
-
-```bash
-python scripts/create_pytorch_model_package.py
-```
-
-Archivos generados:
+La frontera final es HTTP:
 
 ```text
-examples/videos/test_lsec_dummy.mp4
-examples/model_packages/generated_pytorch/pytorch_binary_segmenter_demo.zip
-examples/model_packages/generated_pytorch/pytorch_incompatible_demo.zip
+ELAN
+  -> POST /api/v1/jobs/segment-video
+  -> Middleware FastAPI
+  -> Backend de modelo HTTP en Docker
 ```
 
-## Endpoints
+## Arquitectura Final
 
-- `GET /health`
-- `GET /api/v1/models`
-- `POST /api/v1/models/install`
-- `GET /api/v1/models/{model_id}`
-- `PATCH /api/v1/models/{model_id}/status`
-- `POST /api/v1/jobs/segment-video`
-- `GET /api/v1/jobs/{job_id}`
-
-## Probar DummyRunner
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/v1/jobs/segment-video \
-  -H "Content-Type: application/json" \
-  -d '{
-    "job_id": "job-dummy",
-    "media": {"path": "examples/videos/test_lsec_dummy.mp4"},
-    "annotation": {"target_tier": "AUTO_SEGMENTS", "default_label": "LSEC_REGION"},
-    "model": {"model_id": "dummy_lsec_segmenter", "version": "0.1.0"},
-    "execution": {"device_preference": "auto", "runner": "auto", "timeout_sec": 300},
-    "parameters": {"threshold": 0.5, "window_size": 16, "stride": 4, "min_segment_ms": 200, "merge_gap_ms": 120}
-  }'
-```
-
-## Probar NativePyTorchRunner
-
-Instalar modelo compatible:
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/v1/models/install \
-  -F "file=@examples/model_packages/generated_pytorch/pytorch_binary_segmenter_demo.zip"
-```
-
-Ejecutar inferencia en CPU:
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/v1/jobs/segment-video \
-  -H "Content-Type: application/json" \
-  -d '{
-    "job_id": "job-pytorch",
-    "media": {"path": "examples/videos/test_lsec_dummy.mp4"},
-    "annotation": {"target_tier": "AUTO_SEGMENTS", "default_label": "LSEC_REGION"},
-    "model": {"model_id": "pytorch_binary_segmenter_demo", "version": "1.0.0"},
-    "execution": {"device_preference": "cpu", "runner": "auto", "timeout_sec": 300},
-    "parameters": {"threshold": 0.5, "window_size": 16, "stride": 4, "min_segment_ms": 200, "merge_gap_ms": 120}
-  }'
-```
-
-Consultar resultado:
-
-```bash
-curl http://127.0.0.1:8000/api/v1/jobs/job-pytorch
-```
-
-## Probar modelo incompatible
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/v1/models/install \
-  -F "file=@examples/model_packages/generated_pytorch/pytorch_incompatible_demo.zip"
-```
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/v1/jobs/segment-video \
-  -H "Content-Type: application/json" \
-  -d '{
-    "job_id": "job-bad-pytorch",
-    "media": {"path": "examples/videos/test_lsec_dummy.mp4"},
-    "annotation": {"target_tier": "AUTO_SEGMENTS", "default_label": "LSEC_REGION"},
-    "model": {"model_id": "pytorch_incompatible_demo", "version": "1.0.0"},
-    "execution": {"device_preference": "cpu", "runner": "auto", "timeout_sec": 300},
-    "parameters": {"threshold": 0.5, "window_size": 16, "stride": 4, "min_segment_ms": 200, "merge_gap_ms": 120}
-  }'
-```
-
-Debe responder `MODEL_ARCHITECTURE_MISMATCH`.
-
-## Probar KeypointPipelineRunner
-
-Preparar el paquete compuesto:
-
-```powershell
-cd examples/model_packages/lsec_bio_gloss_pipeline_v1
-Copy-Item C:\Ruta\Modelos\best_bio_segmenter_v2.pt .\weights\
-Copy-Item C:\Ruta\Modelos\best_keypoint_transformer_v11.pt .\weights\
-cd ..
-Compress-Archive -Path .\lsec_bio_gloss_pipeline_v1\* -DestinationPath .\lsec_bio_gloss_pipeline_v1.zip -Force
-```
-
-Estructura esperada del zip:
+El despliegue recomendado usa Docker Compose:
 
 ```text
-lsec_bio_gloss_pipeline_v1.zip
-  manifest.json
-  weights/
-    best_bio_segmenter_v2.pt
-    best_keypoint_transformer_v11.pt
-  vocab/
-    gloss_vocab_top20.csv
-  config/
-    pipeline_config.json
-  README.md
+middleware
+lsec-bio-gloss-model
 ```
 
-Instalar:
+El middleware:
+
+- valida contratos;
+- administra registry de modelos;
+- administra jobs;
+- selecciona backends `docker_http`;
+- llama `GET /health` y `POST /infer` del backend;
+- devuelve segmentos compatibles con ELAN.
+
+El backend de modelo:
+
+- contiene preprocesamiento;
+- contiene pesos/configuracion del modelo;
+- ejecuta inferencia;
+- postprocesa;
+- devuelve `media_info` y `segments`.
+
+## Levantar Todo
+
+Desde esta carpeta:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/v1/models/install \
-  -F "file=@examples/model_packages/lsec_bio_gloss_pipeline_v1.zip"
+docker compose up --build
 ```
 
-Ejecutar en CPU:
+El middleware queda disponible en:
+
+```text
+http://127.0.0.1:8000
+```
+
+Verificar:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/v1/jobs/segment-video \
-  -H "Content-Type: application/json" \
-  -d '{
-    "job_id": "job-fase-7-bio-gloss",
-    "media": {"path": "examples/videos/test_lsec_dummy.mp4"},
-    "annotation": {"target_tier": "AUTO_GLOSS_SEGMENTS", "default_label": "LSEC_REGION", "label_mode": "gloss_top1"},
-    "model": {"model_id": "lsec_bio_gloss_pipeline_v1", "version": "1.0.0"},
-    "execution": {"device_preference": "cpu", "runner": "auto", "timeout_sec": 300},
-    "parameters": {
-      "bio_window_size": 64,
-      "bio_stride": 32,
-      "gloss_max_len": 64,
-      "smooth_kernel": 3,
-      "min_segment_len": 4,
-      "max_gap_fill": 0,
-      "min_i_after_b": 3,
-      "top_k": 5
+curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/api/v1/models
+```
+
+Debe aparecer:
+
+```text
+lsec_bio_gloss_pipeline_v1
+```
+
+registrado como modelo `docker_http`.
+
+## Contrato Final Para ELAN/Postman
+
+El cliente no debe enviar `runner: keypoint_pipeline` ni parametros internos del
+pipeline. Esos valores pertenecen al backend del modelo.
+
+Request recomendado:
+
+```json
+{
+  "job_id": "job-postman-lsec-001",
+  "media": {
+    "path": "/data/videos/video_001.mp4"
+  },
+  "annotation": {
+    "target_tier": "AUTO_GLOSS_SEGMENTS",
+    "default_label": "LSEC_REGION",
+    "label_mode": "gloss_top1"
+  },
+  "model": {
+    "model_id": "lsec_bio_gloss_pipeline_v1",
+    "version": "1.0.0"
+  },
+  "execution": {
+    "timeout_sec": 300
+  }
+}
+```
+
+`execution` y `parameters` son opcionales. Si el cliente envia parametros
+antiguos por compatibilidad, el middleware los reenvia al backend, pero no los
+interpreta.
+
+## Probar En Postman
+
+Variables:
+
+```text
+base_url = http://127.0.0.1:8000
+job_id = job-postman-lsec-001
+model_id = lsec_bio_gloss_pipeline_v1
+model_version = 1.0.0
+video_path = /data/videos/video_001.mp4
+```
+
+### Health
+
+```text
+GET {{base_url}}/health
+```
+
+### Modelos
+
+```text
+GET {{base_url}}/api/v1/models
+```
+
+### Ejecutar Modelo
+
+```text
+POST {{base_url}}/api/v1/jobs/segment-video
+Content-Type: application/json
+```
+
+Body:
+
+```json
+{
+  "job_id": "{{job_id}}",
+  "media": {
+    "path": "{{video_path}}"
+  },
+  "annotation": {
+    "target_tier": "AUTO_GLOSS_SEGMENTS",
+    "default_label": "LSEC_REGION",
+    "label_mode": "gloss_top1"
+  },
+  "model": {
+    "model_id": "{{model_id}}",
+    "version": "{{model_version}}"
+  },
+  "execution": {
+    "timeout_sec": 300
+  }
+}
+```
+
+### Consultar Job
+
+```text
+GET {{base_url}}/api/v1/jobs/{{job_id}}
+```
+
+## Respuesta
+
+La respuesta conserva:
+
+```json
+{
+  "job_id": "job-postman-lsec-001",
+  "status": "COMPLETED",
+  "media_info": {
+    "fps": 25.0,
+    "duration_ms": 10000,
+    "total_frames": 250
+  },
+  "segments": [
+    {
+      "start_ms": 1000,
+      "end_ms": 2500,
+      "label": "LSEC_REGION",
+      "confidence": 0.91
     }
-  }'
+  ],
+  "trace": {
+    "runner": "docker_http",
+    "docker_mode": "compose_service",
+    "model_id": "lsec_bio_gloss_pipeline_v1",
+    "model_version": "1.0.0"
+  }
+}
 ```
 
-La respuesta mantiene `segments[].start_ms`, `segments[].end_ms`,
-`segments[].label` y `segments[].confidence`. En Fase 7 `label` es la glosa
-top-1 y `predictions` contiene el top-k.
+ELAN debe consumir principalmente:
 
-## CUDA opcional
+- `segments[].start_ms`
+- `segments[].end_ms`
+- `segments[].label`
+- `segments[].confidence`
 
-`device_preference` acepta:
+## Backend Del Modelo Final
 
-- `auto`: usa CUDA si esta disponible; si no, CPU.
-- `cpu`: fuerza CPU.
-- `cuda`: usa CUDA si esta disponible; si no, responde `CUDA_NOT_AVAILABLE`.
+El servicio `lsec-bio-gloss-model` incluido es un backend HTTP de referencia para
+el despliegue. Su configuracion interna esta en:
 
-## Trace PyTorch
+```text
+examples/docker_model_backend/model_config/pipeline_config.json
+```
 
-El trace incluye:
+Ese archivo representa los parametros que antes se enviaban desde Postman:
 
-- `runner`
-- `device`
-- `model_id`
-- `model_version`
-- `output_type`
-- `windows_count`
-- `stages.model_load_ms`
-- `stages.tensor_conversion_ms`
-- `stages.inference_ms`
-- `stages.aggregation_ms`
-- metricas de video de Fase 4
-- `stages.postprocessing_ms`
-- `stages.total_ms`
+- `bio_window_size`
+- `bio_stride`
+- `gloss_max_len`
+- `pose_idx`
+- `raw_feature_dim`
+- `final_feature_dim`
+- etc.
 
-## Errores principales
+En la arquitectura final, esos parametros pertenecen al backend del modelo, no
+al cliente.
 
-- `MODEL_LOAD_ERROR`
-- `MODEL_ARCHITECTURE_MISMATCH`
-- `PYTORCH_INFERENCE_ERROR`
-- `BIO_MODEL_LOAD_ERROR`
-- `GLOSS_MODEL_LOAD_ERROR`
-- `BIO_INFERENCE_ERROR`
-- `GLOSS_INFERENCE_ERROR`
-- `MEDIAPIPE_IMPORT_ERROR`
-- `KEYPOINT_EXTRACTION_ERROR`
-- `KEYPOINTS_EMPTY`
-- `VOCAB_NOT_FOUND`
-- `VOCAB_INVALID`
-- `CUDA_NOT_AVAILABLE`
-- `INVALID_TENSOR_SHAPE`
-- `INVALID_KEYPOINT_SHAPE`
-- `UNSUPPORTED_RUNTIME`
-- `UNSUPPORTED_FRAMEWORK`
-- `VIDEO_NOT_FOUND`
-- `MODEL_NOT_FOUND`
-- `MODEL_DISABLED`
+La imagen del backend copia tambien el paquete instalado:
 
-## Preparacion para ELAN
+```text
+app/models_store/installed/lsec_bio_gloss_pipeline_v1/1.0.0
+```
 
-El contrato externo sigue siendo `POST /api/v1/jobs/segment-video`. ELAN podra
-enviar el video y el modelo seleccionado sin conocer si internamente corre dummy,
-PyTorch nativo o, mas adelante, Docker. La respuesta sigue siendo JSON con
-segmentos temporales listos para convertirse en anotaciones.
+dentro de:
 
-## Limitaciones Fase 7
+```text
+/model_service/model_package
+```
 
-- El middleware no genera EAF; ELAN crea anotaciones desde el JSON.
-- Los `.pt` deben ser `state_dict` compatibles con las arquitecturas locales.
-- Docker sigue fuera de alcance.
-- MediaPipe debe estar instalado en el entorno Python donde corre Uvicorn.
-- El paquete ejemplo no incluye pesos reales; deben copiarse antes de comprimir.
+Ese es el lugar donde debe conectarse la implementacion real de inferencia del
+backend.
+
+## Integrar Otro Modelo
+
+Para integrar otro backend:
+
+1. Crear una imagen Docker del modelo.
+2. Exponer `GET /health`.
+3. Exponer `POST /infer`.
+4. Agregar el servicio al `docker-compose.yml`.
+5. Crear un manifest con `runtime.mode=docker` y `runner=docker_http`.
+6. Copiar el manifest al directorio de bootstrap o instalarlo por
+   `/api/v1/models/install`.
+
+ELAN no cambia.
+
+## Métricas
+
+```text
+GET {{base_url}}/api/v1/metrics
+```
+
+Devuelve contadores acumulados desde que el middleware arrancó:
+
+```json
+{
+  "total_jobs": 5,
+  "completed_jobs": 4,
+  "failed_jobs": 0,
+  "timeout_jobs": 1,
+  "active_jobs": 0,
+  "queued_jobs": 0,
+  "average_exec_ms": 3420.5,
+  "last_exec_ms": 3100,
+  "error_counts": {
+    "DOCKER_TIMEOUT": 1
+  }
+}
+```
+
+Todos los valores se reinician al reiniciar el middleware.
+
+## Variables De Entorno
+
+- `MIDDLEWARE_MODELS_STORE_DIR`: ruta del registry persistente.
+- `MIDDLEWARE_BOOTSTRAP_MANIFESTS_DIR`: manifests cargados al iniciar.
+- `MIDDLEWARE_RUNTIME_PROFILE`: perfil de ejecucion. En entrega se usa `final`.
+- `MIDDLEWARE_MAX_CONCURRENT_JOBS`: número máximo de jobs de inferencia simultáneos.
+  Controla cuántos backends Docker pueden inferir al mismo tiempo (control de VRAM).
+  Valor por defecto: `1`. Aumentar solo si hay VRAM suficiente para múltiples modelos.
+
+## Limitaciones
+
+- Se requiere Docker Desktop o Docker Engine.
+- El backend recibe `media.path`; el video debe estar en una ruta accesible para
+  el contenedor de modelo.
+- El backend de referencia ya empaqueta los artefactos instalados del modelo,
+  pero su endpoint `/infer` debe conectarse con la implementacion real de
+  inferencia para producir resultados reales.
+- El middleware no genera EAF.
+- El middleware no modifica ELAN.

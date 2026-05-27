@@ -32,31 +32,12 @@ class AnnotationConfig(BaseModel):
 
 class ExecutionConfig(BaseModel):
     device_preference: Literal["auto", "cpu", "cuda"] = "auto"
-    runner: Literal["auto", "dummy", "native_pytorch", "keypoint_pipeline"] = "auto"
+    runner: str = Field(default="auto", min_length=1)
     timeout_sec: int = Field(default=300, gt=0)
 
 
 class SegmentationParameters(BaseModel):
     model_config = ConfigDict(extra="allow")
-
-    threshold: float = Field(default=0.5, ge=0.0, le=1.0)
-    window_size: int = Field(default=16, gt=0)
-    stride: int = Field(default=4, gt=0)
-    min_segment_ms: int = Field(default=200, gt=0)
-    merge_gap_ms: int = Field(default=120, ge=0)
-    resize_width: int = Field(default=224, gt=0)
-    resize_height: int = Field(default=224, gt=0)
-    max_frames: int | None = Field(default=None, gt=0)
-    frame_stride: int = Field(default=1, gt=0)
-    bio_window_size: int = Field(default=64, gt=0)
-    bio_stride: int = Field(default=32, gt=0)
-    gloss_max_len: int = Field(default=72, gt=0)
-    smooth_kernel: int = Field(default=3, gt=0)
-    min_segment_len: int = Field(default=4, ge=0)
-    max_gap_fill: int = Field(default=0, ge=0)
-    min_i_after_b: int = Field(default=3, ge=0)
-    suppress_repeated_b_inside_segment: bool = False
-    top_k: int = Field(default=5, gt=0)
 
 
 class SegmentVideoRequest(BaseModel):
@@ -64,8 +45,8 @@ class SegmentVideoRequest(BaseModel):
     media: MediaInput
     annotation: AnnotationConfig
     model: ModelReference
-    execution: ExecutionConfig
-    parameters: SegmentationParameters
+    execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
+    parameters: SegmentationParameters = Field(default_factory=SegmentationParameters)
 
 
 class Prediction(BaseModel):
@@ -124,6 +105,12 @@ class ExecutionTrace(BaseModel):
     bio_inference_ms: int | None = Field(default=None, ge=0)
     bio_postprocessing_ms: int | None = Field(default=None, ge=0)
     gloss_classification_ms: int | None = Field(default=None, ge=0)
+    docker_mode: str | None = None
+    docker_image: str | None = None
+    container_id: str | None = None
+    container_start_ms: int | None = Field(default=None, ge=0)
+    healthcheck_ms: int | None = Field(default=None, ge=0)
+    docker_inference_ms: int | None = Field(default=None, ge=0)
     total_ms: int | None = Field(default=None, ge=0)
 
 

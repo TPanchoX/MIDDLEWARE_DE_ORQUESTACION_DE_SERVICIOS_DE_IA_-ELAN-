@@ -5,15 +5,14 @@ from fastapi.responses import JSONResponse
 
 from app.api.routes_health import router as health_router
 from app.api.routes_jobs import router as jobs_router
+from app.api.routes_metrics import router as metrics_router
 from app.api.routes_models import router as models_router
 from app.core.config import get_settings
 from app.core.logging_config import configure_logging
-from app.processing.video_loader import VideoProcessingError
-from app.processing.keypoints.mediapipe_keypoint_extractor import MediaPipeKeypointError
-from app.runners.keypoint_pipeline_runner import KeypointPipelineRunnerError
-from app.runners.native_pytorch_runner import PyTorchRunnerError
 from app.runners.runner_selector import RunnerSelectionError
 from app.schemas.common import ErrorResponse
+from app.services.docker_lifecycle_service import DockerLifecycleError
+from app.services.docker_service import DockerServiceError
 from app.services.job_service import JobNotFoundError
 from app.services.model_registry_service import ModelRegistryError
 
@@ -45,36 +44,21 @@ async def handle_runner_selection_error(_: Request, exc: RunnerSelectionError) -
     )
 
 
-@app.exception_handler(VideoProcessingError)
-async def handle_video_processing_error(_: Request, exc: VideoProcessingError) -> JSONResponse:
+@app.exception_handler(DockerServiceError)
+async def handle_docker_service_error(_: Request, exc: DockerServiceError) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
         content=ErrorResponse(error_code=exc.error_code, detail=str(exc)).model_dump(),
     )
 
 
-@app.exception_handler(PyTorchRunnerError)
-async def handle_pytorch_runner_error(_: Request, exc: PyTorchRunnerError) -> JSONResponse:
+@app.exception_handler(DockerLifecycleError)
+async def handle_docker_lifecycle_error(_: Request, exc: DockerLifecycleError) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
-        content=ErrorResponse(error_code=exc.error_code, detail=str(exc)).model_dump(),
+        content=ErrorResponse(error_code=exc.error_code, detail=exc.detail).model_dump(),
     )
 
-
-@app.exception_handler(KeypointPipelineRunnerError)
-async def handle_keypoint_pipeline_runner_error(_: Request, exc: KeypointPipelineRunnerError) -> JSONResponse:
-    return JSONResponse(
-        status_code=exc.status_code,
-        content=ErrorResponse(error_code=exc.error_code, detail=str(exc)).model_dump(),
-    )
-
-
-@app.exception_handler(MediaPipeKeypointError)
-async def handle_mediapipe_keypoint_error(_: Request, exc: MediaPipeKeypointError) -> JSONResponse:
-    return JSONResponse(
-        status_code=exc.status_code,
-        content=ErrorResponse(error_code=exc.error_code, detail=str(exc)).model_dump(),
-    )
 
 
 @app.exception_handler(JobNotFoundError)
@@ -100,3 +84,4 @@ async def handle_unexpected_error(_: Request, exc: Exception) -> JSONResponse:
 app.include_router(health_router)
 app.include_router(models_router, prefix=settings.api_v1_prefix)
 app.include_router(jobs_router, prefix=settings.api_v1_prefix)
+app.include_router(metrics_router, prefix=settings.api_v1_prefix)

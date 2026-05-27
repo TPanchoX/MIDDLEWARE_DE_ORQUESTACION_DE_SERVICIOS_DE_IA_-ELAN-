@@ -18,10 +18,12 @@ from app.schemas.models import (
     ModelInstallResponse,
     ModelListResponse,
     ModelManifest,
-    ModelRuntime,
     ModelStatusUpdateResponse,
-    ModelUiConfig,
     RegisteredModel,
+)
+from app.services.docker_lifecycle_service import (
+    DockerLifecycleError,
+    docker_lifecycle_service,
 )
 
 
@@ -87,10 +89,16 @@ class ModelRegistryService:
     def __init__(self) -> None:
         app_dir = Path(__file__).resolve().parents[1]
         settings = get_settings()
+        self.runtime_profile = settings.runtime_profile
         self.models_store_dir = (
             Path(settings.models_store_dir).resolve()
             if settings.models_store_dir
             else app_dir / "models_store"
+        )
+        self.bootstrap_manifests_dir = (
+            Path(settings.bootstrap_manifests_dir).resolve()
+            if settings.bootstrap_manifests_dir
+            else None
         )
         self.installed_dir = self.models_store_dir / "installed"
         self.registry_path = self.models_store_dir / "registry.json"
@@ -99,7 +107,7 @@ class ModelRegistryService:
 
         self._ensure_store()
         self._load_registry()
-        self._seed_default_models()
+        self._bootstrap_docker_manifests()
 
     def _ensure_store(self) -> None:
         self.installed_dir.mkdir(parents=True, exist_ok=True)
@@ -112,51 +120,65 @@ class ModelRegistryService:
             raw_models = raw_registry.get("models", [])
             models = [InstalledModel.model_validate(item) for item in raw_models]
         except (OSError, json.JSONDecodeError, ValidationError) as exc:
-            logger.warning("Registry file could not be loaded, starting with built-in models: %s", exc)
+            logger.warning("Registry file could not be loaded, starting with an empty registry: %s", exc)
             models = []
 
         self._models = {(model.model_id, model.version): model for model in models}
 
-    def _seed_default_models(self) -> None:
-        key = ("dummy_lsec_segmenter", "0.1.0")
-        existing_model = self._models.get(key)
-        if existing_model is not None and existing_model.source != "builtin":
+    def _bootstrap_docker_manifests(self) -> None:
+        if self.bootstrap_manifests_dir is None:
+            return
+        if not self.bootstrap_manifests_dir.exists():
+            logger.warning("Bootstrap manifest directory '%s' does not exist.", self.bootstrap_manifests_dir)
             return
 
-        status = existing_model.status if existing_model is not None else "available"
-        installed_at = existing_model.installed_at if existing_model is not None else self._utc_now()
-        dummy_model = InstalledModel(
-            model_id="dummy_lsec_segmenter",
-            name="Dummy LSEC Segmenter",
-            version="0.1.0",
-            task="video_segmentation",
-            runtime=ModelRuntime(mode="dummy", framework="dummy"),
-            artifacts={"runner": "builtin://dummy_lsec_segmenter"},
-            input_contract={
-                "media_type": "video",
-                "layout": "B,T,C,H,W",
-                "window_size": 16,
-                "channels": 3,
-                "height": 224,
-                "width": 224,
-            },
-            output_contract={
-                "type": "frame_probabilities",
-                "classes": ["background", "gesture"],
-            },
-            ui=ModelUiConfig(default_label="LSEC_REGION", supports_threshold=True),
-            status=status,
-            installed_at=installed_at,
-            install_path=None,
-            source="builtin",
-        )
-        self._models[key] = dummy_model
-        self._save_registry()
-        logger.info("Seeded or synchronized built-in dummy model '%s'.", dummy_model.model_id)
+        bootstrapped = False
+        for manifest_path in sorted(self.bootstrap_manifests_dir.glob("*.json")):
+            try:
+                manifest_data = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+                manifest = ModelManifest.model_validate(manifest_data)
+            except (OSError, json.JSONDecodeError, ValidationError) as exc:
+                logger.warning("Bootstrap manifest '%s' is invalid and was skipped: %s", manifest_path, exc)
+                continue
+
+            if manifest.runtime.mode != "docker":
+                logger.warning("Bootstrap manifest '%s' is not a docker model and was skipped.", manifest_path)
+                continue
+
+            key = (manifest.model_id, manifest.version)
+            existing_model = self._models.get(key)
+            if existing_model is not None and existing_model.runtime.mode == "docker":
+                continue
+
+            self._models[key] = InstalledModel(
+                **manifest.model_dump(),
+                status="available",
+                installed_at=self._utc_now(),
+                install_path=None,
+                source="installed",
+            )
+            bootstrapped = True
+            logger.info(
+                "Bootstrapped docker model '%s' version '%s' from '%s'.",
+                manifest.model_id,
+                manifest.version,
+                manifest_path,
+            )
+
+        if bootstrapped:
+            self._save_registry()
 
     def list_models(self) -> list[RegisteredModel]:
+        available_models = self._models.values()
+        if self.runtime_profile in {"final", "production", "docker"}:
+            available_models = [
+                model
+                for model in available_models
+                if model.runtime.mode == "docker" and model.runtime.runner == "docker_http"
+            ]
+
         models = sorted(
-            self._models.values(),
+            available_models,
             key=lambda item: (item.source != "builtin", item.model_id, item.version),
         )
         return [
@@ -193,14 +215,87 @@ class ModelRegistryService:
         try:
             with zipfile.ZipFile(BytesIO(content)) as package:
                 file_names = self._validate_zip_entries(package.infolist())
-                manifest = self._read_manifest(package=package, file_names=file_names)
-                self._validate_artifacts(manifest=manifest, file_names=file_names)
-                model = self._install_validated_package(package=package, manifest=manifest)
+
+                # Auto-detect a common top-level directory that wraps all files.
+                # ZIP files created with Windows Explorer, Compress-Archive (without \*),
+                # or macOS "Compress" all wrap everything inside a folder.
+                # Strip it transparently so the manifest is always at logical root.
+                zip_prefix = self._detect_zip_prefix(file_names)
+                effective_names = (
+                    {name[len(zip_prefix):] for name in file_names if name != zip_prefix}
+                    if zip_prefix else file_names
+                )
+
+                manifest = self._read_manifest(
+                    package=package, file_names=effective_names, zip_prefix=zip_prefix
+                )
+                self._validate_artifacts(manifest=manifest, file_names=effective_names)
+                model = self._install_validated_package(
+                    package=package, manifest=manifest, zip_prefix=zip_prefix
+                )
         except zipfile.BadZipFile as exc:
             raise ModelPackageInvalidError(f"Uploaded file '{filename}' is not a valid zip package.") from exc
 
+        # Auto-build and start Docker container when the package includes a Dockerfile.
+        # This is the "install once, use always" flow: POST /models/install → docker build
+        # → docker run → health check → ready to serve inference requests.
+        if "dockerfile" in model.artifacts:
+            install_path = Path(self.resolve_install_path(model))
+            self._auto_start_docker_backend(model=model, manifest=manifest, install_path=install_path)
+
         logger.info("Installed model '%s' version '%s'.", model.model_id, model.version)
         return ModelInstallResponse(message="Model installed successfully.", model=model)
+
+    def _auto_start_docker_backend(
+        self,
+        model: InstalledModel,
+        manifest: ModelManifest,
+        install_path: Path,
+    ) -> None:
+        """Build Docker image and start container for a self-contained model package."""
+        settings = get_settings()
+        videos_dir = Path(settings.videos_dir).resolve() if settings.videos_dir else None
+
+        backend_config: dict = {}
+        if manifest.model_extra:
+            raw = manifest.model_extra.get("backend_config")
+            if isinstance(raw, dict):
+                backend_config = raw
+
+        logger.info(
+            "Starting Docker lifecycle for model '%s' version '%s'.",
+            model.model_id, model.version,
+        )
+        try:
+            docker_lifecycle_service.build_and_start(
+                install_path=install_path,
+                model_id=model.model_id,
+                model_version=model.version,
+                backend_config=backend_config,
+                videos_dir=videos_dir,
+            )
+        except DockerLifecycleError as exc:
+            self._rollback_installation(model=model, install_path=install_path)
+            raise ModelPackageInvalidError(
+                f"Docker lifecycle failed — model installation rolled back. Detail: {exc.detail}"
+            ) from exc
+        except Exception as exc:
+            self._rollback_installation(model=model, install_path=install_path)
+            raise ModelPackageInvalidError(
+                f"Unexpected error during Docker lifecycle — installation rolled back: {exc}"
+            ) from exc
+
+    def _rollback_installation(self, model: InstalledModel, install_path: Path) -> None:
+        """Remove model from the in-memory registry, persist, and delete the install dir."""
+        logger.warning(
+            "Rolling back installation of model '%s' version '%s'.",
+            model.model_id, model.version,
+        )
+        with self._lock:
+            self._models.pop((model.model_id, model.version), None)
+            self._save_registry()
+        if install_path.exists():
+            shutil.rmtree(install_path, ignore_errors=True)
 
     def update_status(
         self,
@@ -249,23 +344,45 @@ class ModelRegistryService:
         self,
         package: zipfile.ZipFile,
         manifest: ModelManifest,
+        zip_prefix: str = "",
     ) -> InstalledModel:
         install_path = self.installed_dir / manifest.model_id / manifest.version
         self._assert_path_inside(install_path, self.installed_dir)
 
         with self._lock:
+            # Guard against stale in-memory entries that survived a failed rollback.
+            # If the registry file no longer contains this model but _models does,
+            # the in-memory state is out of sync — heal it before raising.
             if (manifest.model_id, manifest.version) in self._models:
-                raise ModelAlreadyExistsError(
-                    f"Model '{manifest.model_id}' version '{manifest.version}' is already installed."
+                persisted = any(
+                    m.get("model_id") == manifest.model_id
+                    and m.get("version") == manifest.version
+                    for m in json.loads(
+                        self.registry_path.read_text(encoding="utf-8")
+                    ).get("models", [])
                 )
+                if not persisted:
+                    # Stale in-memory entry — remove it silently and proceed.
+                    logger.warning(
+                        "Removing stale in-memory entry for '%s' v%s (not in registry.json).",
+                        manifest.model_id, manifest.version,
+                    )
+                    self._models.pop((manifest.model_id, manifest.version), None)
+                else:
+                    raise ModelAlreadyExistsError(
+                        f"Model '{manifest.model_id}' version '{manifest.version}' is already installed."
+                    )
             if install_path.exists():
-                raise ModelAlreadyExistsError(
-                    f"Install directory for model '{manifest.model_id}' version '{manifest.version}' already exists."
+                # Orphan directory from a failed rollback — clean it up.
+                logger.warning(
+                    "Removing orphan install directory for '%s' v%s.",
+                    manifest.model_id, manifest.version,
                 )
+                shutil.rmtree(install_path, ignore_errors=True)
 
             try:
                 install_path.mkdir(parents=True, exist_ok=False)
-                self._extract_package(package=package, target_dir=install_path)
+                self._extract_package(package=package, target_dir=install_path, zip_prefix=zip_prefix)
                 installed_model = InstalledModel(
                     **manifest.model_dump(),
                     status="available",
@@ -282,12 +399,17 @@ class ModelRegistryService:
 
         return installed_model
 
-    def _read_manifest(self, package: zipfile.ZipFile, file_names: set[str]) -> ModelManifest:
+    def _read_manifest(
+        self,
+        package: zipfile.ZipFile,
+        file_names: set[str],
+        zip_prefix: str = "",
+    ) -> ModelManifest:
         if "manifest.json" not in file_names:
             raise ModelManifestNotFoundError("Model package must contain manifest.json at the zip root.")
 
         try:
-            with package.open("manifest.json") as manifest_file:
+            with package.open(f"{zip_prefix}manifest.json") as manifest_file:
                 manifest_data = json.loads(manifest_file.read().decode("utf-8-sig"))
         except (KeyError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise ModelManifestInvalidError("manifest.json must be valid UTF-8 JSON.") from exc
@@ -303,11 +425,17 @@ class ModelRegistryService:
 
     def _validate_artifacts(self, manifest: ModelManifest, file_names: set[str]) -> None:
         for artifact_name, artifact_path in manifest.artifacts.items():
+            if self._is_external_docker_artifact(manifest=manifest, artifact_name=artifact_name):
+                continue
             normalized_path = self._normalize_package_path(artifact_path)
             if normalized_path not in file_names:
                 raise ModelArtifactMissingError(
                     f"Artifact '{artifact_name}' declared at '{artifact_path}' was not found in the package."
                 )
+
+    @staticmethod
+    def _is_external_docker_artifact(manifest: ModelManifest, artifact_name: str) -> bool:
+        return manifest.runtime.mode == "docker" and artifact_name == "docker_image"
 
     def _validate_zip_entries(self, entries: Iterable[zipfile.ZipInfo]) -> set[str]:
         file_names: set[str] = set()
@@ -324,9 +452,23 @@ class ModelRegistryService:
             raise ModelPackageInvalidError("Model package does not contain files.")
         return file_names
 
-    def _extract_package(self, package: zipfile.ZipFile, target_dir: Path) -> None:
+    def _extract_package(
+        self,
+        package: zipfile.ZipFile,
+        target_dir: Path,
+        zip_prefix: str = "",
+    ) -> None:
         for entry in package.infolist():
             normalized_name = self._normalize_package_path(entry.filename)
+
+            # Strip the common top-level prefix that was detected during validation.
+            if zip_prefix and normalized_name.startswith(zip_prefix):
+                normalized_name = normalized_name[len(zip_prefix):]
+
+            # Skip the prefix directory entry itself (empty after stripping).
+            if not normalized_name:
+                continue
+
             destination = target_dir / normalized_name
             self._assert_path_inside(destination, target_dir)
 
@@ -338,15 +480,50 @@ class ModelRegistryService:
             with package.open(entry) as source, destination.open("wb") as target:
                 shutil.copyfileobj(source, target)
 
+    @staticmethod
+    def _detect_zip_prefix(file_names: set[str]) -> str:
+        """
+        Return the common top-level directory (with trailing ``/``) shared by
+        ALL entries, or an empty string if no such prefix exists.
+
+        Examples
+        --------
+        ``{"pkg/manifest.json", "pkg/config/x.json"}``  →  ``"pkg/"``
+        ``{"manifest.json", "config/x.json"}``           →  ``""``
+
+        This lets the service accept ZIP files that wrap all content inside
+        a single folder (the default behaviour of Windows Explorer,
+        ``Compress-Archive`` without ``\\*``, and macOS "Compress").
+        """
+        if not file_names:
+            return ""
+
+        def _top_dir(name: str) -> str:
+            idx = name.find("/")
+            return name[: idx + 1] if idx >= 0 else ""
+
+        top_dirs = {_top_dir(name) for name in file_names}
+        if len(top_dirs) == 1:
+            prefix = top_dirs.pop()
+            # Only strip if EVERY file lives below a real subdirectory
+            # (prefix == "" means all files are already at the root).
+            return prefix
+        return ""
+
     def _normalize_package_path(self, value: str) -> str:
         if not value or not value.strip():
             raise ModelPackageInvalidError("Package contains an empty path.")
-        if "\\" in value:
-            raise ModelPackageInvalidError(f"Unsafe package path '{value}' is not allowed.")
-        if PureWindowsPath(value).drive:
+
+        # ZIP files created on Windows (Compress-Archive, Explorer, etc.) store paths with
+        # backslashes. Normalise to forward slashes before applying security checks so that
+        # valid packages from Windows hosts are not rejected.
+        normalized = value.replace("\\", "/")
+
+        # Reject Windows drive letters (e.g. "C:/foo") even after normalisation.
+        if PureWindowsPath(normalized).drive:
             raise ModelPackageInvalidError(f"Unsafe package path '{value}' is not allowed.")
 
-        path = PurePosixPath(value)
+        path = PurePosixPath(normalized)
         if path.is_absolute():
             raise ModelPackageInvalidError(f"Unsafe package path '{value}' is not allowed.")
 

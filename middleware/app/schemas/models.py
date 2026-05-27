@@ -5,8 +5,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 ModelTask = Literal["video_segmentation", "video_segmentation_and_gloss_classification"]
 ModelStatus = Literal["available", "disabled", "invalid"]
-RuntimeMode = Literal["dummy", "native", "docker"]
-RuntimeFramework = Literal["dummy", "pytorch", "container"]
+RuntimeMode = Literal["docker"]
+RuntimeFramework = Literal["container"]
 
 MODEL_ID_PATTERN = r"^[A-Za-z0-9_.-]+$"
 MODEL_VERSION_PATTERN = r"^[A-Za-z0-9_.-]+$"

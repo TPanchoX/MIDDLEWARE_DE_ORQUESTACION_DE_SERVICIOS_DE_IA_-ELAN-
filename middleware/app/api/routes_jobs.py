@@ -16,6 +16,9 @@ router = APIRouter(tags=["jobs"])
         404: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
         422: {"model": ErrorResponse},
+        502: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+        504: {"model": ErrorResponse},
         501: {"model": ErrorResponse},
     },
 )

@@ -21,4 +21,7 @@ class StageMetrics(BaseModel):
     bio_inference_ms: int = Field(default=0, ge=0)
     bio_postprocessing_ms: int = Field(default=0, ge=0)
     gloss_classification_ms: int = Field(default=0, ge=0)
+    container_start_ms: int = Field(default=0, ge=0)
+    healthcheck_ms: int = Field(default=0, ge=0)
+    docker_inference_ms: int = Field(default=0, ge=0)
     total_ms: int = Field(default=0, ge=0)

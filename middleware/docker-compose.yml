@@ -1,0 +1,39 @@
+services:
+  middleware:
+    build:
+      context: .
+    image: elan-ai-middleware:0.1.0
+    container_name: elan-ai-middleware
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      MIDDLEWARE_HOST: 0.0.0.0
+      MIDDLEWARE_PORT: 8000
+      MIDDLEWARE_LOG_LEVEL: INFO
+      MIDDLEWARE_RUNTIME_PROFILE: final
+      MIDDLEWARE_MODELS_STORE_DIR: /app/data/models_store
+      # Directory on the HOST where videos are stored.
+      # Mounted read-only at /data/videos inside every model container.
+      # Use forward slashes even on Windows (Docker Desktop translates them).
+      # Example: C:/Users/yourname/Videos
+      MIDDLEWARE_VIDEOS_DIR: "C:/Users/imbaq/OneDrive/Desktop"
+      # Shared Docker network used for container-to-container communication.
+      # Model containers are attached to this network so the middleware can
+      # reach them by container name (no host-port mapping required).
+      MIDDLEWARE_DOCKER_NETWORK: elan-ai-shared
+    volumes:
+      - middleware_models:/app/data/models_store
+      # Mount the Docker socket so the middleware can build/run model containers.
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - shared
+    restart: unless-stopped
+
+volumes:
+  middleware_models:
+
+networks:
+  shared:
+    # Fixed name so model containers can join by this exact name regardless of
+    # the docker-compose project prefix.
+    name: elan-ai-shared

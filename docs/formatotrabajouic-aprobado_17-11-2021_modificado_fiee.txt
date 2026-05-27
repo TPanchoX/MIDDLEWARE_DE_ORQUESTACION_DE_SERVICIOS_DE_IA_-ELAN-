@@ -1,0 +1,384 @@
+ESCUELA POLITÉCNICA NACIONAL
+
+
+
+
+FACULTAD DE INGENIERÍA ELECTRÍCA Y ELECTRÓNICA
+
+
+
+
+ANÁLISIS DE HERRAMIENTAS SOFTWARE PARA LA GESTIÓN DE ETIQUETADO DE VIDEOS
+
+MIDDLEWARE PARA LA ORQUESTACIÓN DE SERVICIOS DE INTELIGENCIA ARTIFICIAL PARA LA HERRAMIENTA DE ANOTACIÓN ELAN APLICADO AL LÉXICO DE LA LENGUA DE SEÑAS ECUATORIANA
+
+
+
+
+TRABAJO DE INTEGRACIÓN CURRICULAR PRESENTADO COMO REQUISITO PARA LA OBTENCIÓN DEL TÍTULO DE INGENIERO EN TECNOLOGIAS DE LA INFORMACION
+
+
+
+Francisco Sebastián Imbaquinga Espinosa
+imbaquinga173@gmail.com/francisco.imbaquinga@epn.edu.ec
+
+
+
+Xavier Alexander Calderón Hinojosa
+xavier.calderon@epn.edu.ec
+DMQ, 05 2026
+ 
+CERTIFICACIONES
+
+Yo, Francisco Sebastián Imbaquinga Espinosa declaro que el trabajo de integración curricular aquí descrito es de mi autoría; que no ha sido previamente presentado para ningún grado o calificación profesional; y, que he consultado las referencias bibliográficas que se incluyen en este documento.
+
+
+
+
+Francisco Sebastián Imbaquinga Espinosa
+
+
+
+
+
+
+Certifico que el presente trabajo de integración curricular fue desarrollado por Francisco Sebastián Imbaquinga Espinosa, bajo mi supervisión.
+
+
+
+
+
+
+      Xavier Calderón
+ DIRECTOR
+ 
+DECLARACIÓN DE AUTORÍA
+
+
+A través de la presente declaración, afirmamos que el trabajo de integración curricular aquí descrito, así como el (los) producto(s) resultante(s) del mismo, son públicos y estarán a disposición de la comunidad a través del repositorio institucional de la Escuela Politécnica Nacional; sin embargo, la titularidad de los derechos patrimoniales nos corresponde a los autores que hemos contribuido en el desarrollo del presente trabajo; observando para el efecto las disposiciones establecidas por el órgano competente en propiedad intelectual, la normativa interna y demás normas.
+
+
+Patricio Sánchez
+Xavier Calderón
+Francisco Imbaquinga
+ 
+DEDICATORIA
+
+
+
+(Opcional)
+ 
+AGRADECIMIENTO
+
+
+
+(Opcional)
+ 
+ÍNDICE DE CONTENIDO
+CERTIFICACIONES	I
+DECLARACIÓN DE AUTORÍA	II
+DEDICATORIA	III
+AGRADECIMIENTO	IV
+ÍNDICE DE CONTENIDO	V
+RESUMEN	VI
+ABSTRACT	VII
+1.	INTRODUCCIÓN
+1.1	Objetivo general	1
+1.2	Objetivos específicos	1
+1.3	Alcance	1
+1.4	Marco teórico	1
+2	METODOLOGÍA	2
+3	RESULTADOS, CONCLUSIONES Y RECOMENDACIONES	3
+3.1	Resultados	3
+3.2	Conclusiones	3
+3.3	Recomendaciones	4
+4	REFERENCIAS BIBLIOGRÁFICAS	5
+5	ANEXOS	6
+ANEXO I	7
+ 
+RESUMEN
+(Ejemplo) El presente proyecto de Integración curricular detalla el desarrollo de un módulo beta de inteligencia artificial para apoyar la anotación automática de videos de Lengua de Señas Ecuatoriana dentro del software ELAN. La propuesta surge debido a que la anotación manual de corpus lingüísticos visuales requiere una alta inversión de tiempo y conocimiento así también la carencia de herramientas enfocadas a la automatización de segmentación o etiquetado, especialmente cuando se deben identificar intervalos temporales de señas y asignar glosas de manera individual. Para el desarrollo se utilizó un corpus proporcionado por la Pontificia Universidad Católica del Ecuador, compuesto por videos y archivos .eaf almacenados por separado. Los archivos .eaf contenían anotaciones manuales que fueron usadas como referencia para preparar los datos de entrenamiento.
+La solución se dividió en dos modelos independientes. El primero realiza la segmentación automática de señas mediante un enfoque BIO v2 con postprocesamiento temporal, mientras que el segundo clasifica las glosas mediante un modelo Keypoint Transformer v1.1 basado en características corporales extraídas del video. Separar permitió tratar de forma independiente la detección temporal y el etiquetamiento léxico, reduciendo la complejidad en un solo modelo. Debido a la cantidad limitada de datos disponibles, el sistema se plantea como una versión beta orientada a asistir al investigador, no a reemplazar la validación humana, no obstante; no obstante, con esta ayuda el corpus de datos podrá ir creciendo de manera rápida para reentrenar un nuevo modelo con más datos y acercarse a la automatización total.
+PALABRAS CLAVE: ELAN, Lengua de Señas Ecuatoriana, glosas, segmentación automática, inteligencia artificial, anotación lingüística.
+ 
+ABSTRACT
+This curricular integration project details the development of a beta module of artificial intelligence to support the automatic annotation of Ecuadorian Sign Language videos within the ELAN software. The proposal arises because the manual annotation of visual linguistic corpora requires a high investment of time and knowledge, as well as the lack of tools focused on automation of segmentation or labeling, especially when temporal intervals of signs must be identified and glosses assigned individually. For the development, a corpus provided by the Pontificia Universidad Católica del Ecuador, composed of videos and .eaf files stored separately, was used. The .eaf files contained manual annotations that were used as a reference to prepare the training data.
+The solution was divided into two independent models. The first performs automatic sign segmentation using a BIO v2 approach with temporal post-processing, while the second classifies glosses using a Keypoint Transformer v1.1 model based on body features extracted from the video. Separating them allowed temporal detection and lexical labeling to be treated independently, reducing the complexity of a single model. Due to the limited amount of data available, the system is proposed as a beta version aimed at assisting the researcher, not replacing human validation; however, with this help, the data corpus will be able to grow quickly to retrain a new model with more data and move closer to full automation.
+KEYWORDS: ELAN, Ecuadorian Sign Language, glosses, automatic segmentation, artificial intelligence, linguistic annotation.
+ 
+1	INTRODUCCIÓN
+La Lengua de Señas Ecuatoriana (LSEC) representa un desafío complejo en el campo de la investigación lingüística, donde suelen hacer uso de herramientas de anotación multimodal como ELAN para el análisis de videos. Sin embargo, la arquitectura cerrada y antigua de ELAN basada en Java limita su integración con modelos de Inteligencia Artificial, los cuales requieren entornos modernos como Python y recursos computacionales considerables. Este trabajo de integración curricular aborda esta problemática mediante el desarrollo de un middleware de orquestación que actúa como intermediario entre ELAN y modelos de aprendizaje profundo. Esta solución está basada en el patrón Sidecar, haciendo uso de contenedores para ejecutar inferencias y gestionar modelos de forma local asegurando la soberanía de los datos y la estabilidad de ELAN. 
+La Lengua de Señas Ecuatoriana (LSEC) representa una parte fundamental del patrimonio lingüístico y cultural del país, siendo de suma importancia para la comunicación de personas con dificultades auditivas y su integración con la sociedad. El estudio sistemático de la LSEC ha ganado relevancia en estos últimos años, especialmente en el contexto de investigaciones en Inteligencia Artificial y el procesamiento de lenguaje natural. Para el análisis profundo de videos de LSEC, gran parte de la comunidad científica ha adoptado herramientas de anotación multimodal como ELAN (Eudico Language Annotar) que permite segmentar y etiquetar eventos lingüísticos sobre la línea de tiempo. Sin embargo, la arquitectura cerrada y antigua de ELAN basada en Java limita su integración con modelos de Inteligencia Artificial, los cuales requieren entornos modernos como Python y recursos computacionales considerables.
+Este trabajo de integración curricular aborda la brecha de interoperabilidad entre ELAN y modelos de aprendizaje profundo mediate el desarrollo de un middleware de orquestación que actúa como intermediario. Esta solución está diseñada bajo el patrón Sidecar lo que nos permite que ELAN envíe solicitudes de procesamiento de videos a diferentes modelos de forma local y sin requerir modificaciones profundas en la arquitectura base del software. El middleware gestiona dinámicamente contenedores Docker para ejecutar modelos de segmentación y clasificación de videos, traduce protocolos heredados de ELAN a interfaces REST modernas y asigna recursos computacionales (CPU/GPU) para mejorar el rendimiento en la ejecución de modelos complejos en computadoras estándar. La arquitectura utilizada garantiza la soberanía de los datos al ejecutarse en el entorno local sin depender de servicios en la nube, también preserva la estabilidad de ELAN y la compatibilidad con los componentes aislados.
+La implementación del middleware se estructuró en fases iterativas que se desarrollaron a partir de un prototipo funcional con servicios base, pasando por la gestión de modelos, procesamiento real de videos con OpenCV hasta la integración final con ELAN mediante un módulo que traduce las respuestas del middleware en anotaciones. El sistema desarrollado resuelve la incompatibilidad entre la arquitectura cerrada de ELAN basada en Java y entonos modernos (Python) de forma eficiente, permitiendo que los investigadores trabajen con ELAN y mantengan acceso a modelos de Inteligencia Artificial de última generación que nos permitan segmentación temporal y clasificación de glosas sin tener que hacer uso de aplicaciones externas no integradas de forma nativa.
+
+
+1.1	Objetivo general
+
+Desarrollo de un middleware de orquestación de servicios de Inteligencia Artificial diseñado para integrar la herramienta de anotación multimodal ELAN con modelos modernos de aprendizaje profundo dedicados al procesamiento de videos de Lengua de Señas Ecuatoriana.
+
+
+1.2	Objetivos específicos
+
+1.	Analizar el protocolo de extensión heredado de ELAN para definir los contratos de interfaz que permitan la inyección transparente de datos desde procesos externos hasta la línea de tiempo del lingüista, facilitando la comunicación bidireccional entre ELAN y el middleware.
+
+2.	Implementar el núcleo del orquestador de servicios de Inteligencia Artificial utilizando Python y tecnologías de virtualización ligera, asegurando la estabilidad del sistema durante la inferencia de modelos.
+
+3.	Validar el rendimiento técnico del middleware realizando pruebas en escenarios de anotación LSEC, midiendo latencia de comunicación, consumo de recursos y la correcta recuperación ante errores de los modelos.
+
+
+
+1.3	Alcance
+
+El alcance de este trabajo de integración curricular se centra en la definición, desarrollo y validación de la capa de infraestructura lógica del middleware de orquestación para ELAN. En la etapa inicial se realizó el estudio de soluciones existentes para la optimización de procesos de LSEC, también se realizó un análisis detallado de las especificaciones técnicas de ELAN, su estructura de archivos, protocolos nativos y mecanismos de extensión para definir contratos de interfaz claros y reproducibles que permitan la inyección de datos desde procesos externos hacia la línea de tiempo del lingüista.
+
+A continuación, se diseñó e implementó el middleware de orquestación, enfocándose en mecanismos de comunicación entre procesos mediante APIs REST, gestión de modelos con un registro centralizado, creación de pipelines especializados y procesamiento de videos real. La solución se diseñó para que la gestión de dependencias fuera indiferente al sistema operativo del usuario final, garantizando portabilidad y estabilidad. Adicionalmente, se integraron componentes de posprocesamiento temporal y traducción de respuestas para generar anotaciones compatibles con ELAN sin la necesidad de producir archivos nativos del software desde el middleware.
+
+Finalmente, el sistema se validó en un entorno controlado de pruebas donde se comprobó la orquestación de modelos de Inteligencia Artificial para la inferencia de segmentos sobre videos de LSEC, se midieron métricas de desempeño como el tiempo de respuesta y uso de recursos, y se evaluó la tolerancia a fallos bajo condiciones de degradación. Se documento la arquitectura final para asegurar la escalabilidad y mantenibilidad del sistema. El desarrollo se limita a un entorno local, priorizando interoperabilidad entre la arquitectura cerrada de ELAN basada en Java y entonos modernos (Python), la gestión dinámica de recursos y la viabilidad de despliegue en computadoras estándar.
+
+Para el desarrollo de esta solución se aplicó un enfoque ágil e iterativo, donde se optó por hacer uso de Scrum como marco de trabajo ágil para organizar ciclos de revisión y mejora continua. En este contexto, la metodología utilizada combinó la naturaleza iterativa del desarrollo incremental con principios ágiles de adaptación permanente lo que permitió realizar ajustes frecuentes en función de los resultados de análisis y pruebas realizadas a lo largo del desarrollo.
+
+
+
+1.4	Marco teórico
+
+Exponer el marco teórico relevante relacionado con el tema, incluyendo los argumentos que justifican la validez de lo realizado, con una revisión bibliográfica pertinente.
+
+ 
+2	METODOLOGÍA
+Describir el diseño o el planteamiento que ha sido utilizado para el desarrollo del componente, el cual depende del método seleccionado (hipotético-deductivo, inductivo, entre otros). Se sugiere incluir, los que correspondan:
+•	Enfoque (cualitativo, cuantitativo o mixto).
+
+•	Tipo de trabajo: exploratorio, descriptivo, explicativo, experimental, estudio de casos, entre otros.
+•	Técnica de recolección de información (entrevistas, cuestionarios, análisis documental, entre otras).
+•	Técnica de análisis de la información.
+
+Este capítulo debe incluir toda la información necesaria para que un interesado pueda replicar el componente sin dificultades. Se debe mencionar explícitamente cuáles actividades se realizaron para cumplir con los objetivos planteados.
+
+ 
+3	RESULTADOS, CONCLUSIONES Y RECOMENDACIONES
+
+
+3.1	Resultados
+
+Exponer los resultados obtenidos, utilizando para esto el apoyo de tablas, figuras, entre otros.
+Un ejemplo de una tabla se presenta en Tabla 3.1.
+
+Tabla 3.1. Resultados de las pruebas realizadas
+
+No. Prueba	Resultado	Tiempo [s]
+1	10	0.9
+2	5	0.5
+
+
+Un ejemplo de una figura se presenta en Figura 3.1.
+
+
+Figura 3.1. Resultados de las pruebas realizadas Un ejemplo de una ecuación se presenta en 3.1.
+(𝑥 + 𝑦)2 = 𝑥2 + 2 ∙ 𝑥 ∙ 𝑦 + 𝑦2	(3.1)
+
+
+
+3.2	Conclusiones
+
+Presenta lo novedoso del trabajo de integración curricular, así como evaluación del cumplimiento o no de lo propuesto en los objetivos. En el caso en que no se cumpla uno o varios objetivos, y no se logren los resultados esperados, se propone una posible respuesta que explique por qué sucedió esto o las falencias de la planteado.
+ 
+3.3	Recomendaciones
+
+Indicar las recomendaciones formuladas a partir del desarrollo de este trabajo de integración curricular.
+ 
+4	REFERENCIAS BIBLIOGRÁFICAS
+Listar todas las referencias bibliográficas de los libros, revistas, direcciones electrónicas, entre otras, que fueron consultadas para el desarrollo del Trabajo de Integración Curricular, siguiendo las normas de estilo IEEE.
+
+
+
+[1] L. Carvajal, Metodología de la Investgación Científica. Curso general y aplicado, 28 ed., Santiago de Cali: U.S.C., 2006, p. 139.
+ 
+5	ANEXOS
+En caso necesario, el documento escrito deberá incluir los anexos y secciones que incorporan información que sea relevante, pero que, por su extensión, no pueden ser incorporadas directamente en ninguna de las secciones anteriores. Normalmente, en la sección de Anexos se incluyen conjuntos de datos extensos, formatos de encuestas, entrevistas, enlaces hacia videos o programas que sean producto o formen parte del Trabajo de Integración Curricular, entre otros.
+Ejemplo de Anexos se muestran a continuación:
+
+ANEXO I. Conjunto de Datos Extensos ANEXO II. Formato de Entrevista ANEXO III. Enlaces
+La numeración de los Anexos debe realizarse con números en formato romano.
+ 
+ANEXO I
+
+
+Incluir el contenido del Anexo I.
+ 
+ASPECTOS DE FORMATO
+
+
+
+Tipografía
+
+Un resumen de la tipografía se presenta a continuación:
+
+
+
+Texto	Tamaño	Fuente	Estilo	Ejemplo
+Normal	11	Arial	Normal, Alineado justificado	Texto de párrafo
+Nivel 1	16	Arial	Mayúsculas, negrilla, estilo Título 1
+numerado, alineación izquierda sin sangría	1 METODOLOGÍA
+Nivel 2	14	Arial	Mayúsculas, negrilla, estilo Título 2 numerado, alineación
+izquierda sin sangría	1.1 SUBCAPÍTULO 1
+Nivel 3	12	Arial	Mayúsculas, negrilla, estilo Título 3 numerado, alineación
+izquierda sin sangría	1.1.1 SUBCAPÍTULO 2
+Nivel 4	12	Arial	Minúsculas, negrilla, estilo Título 4 numerado, alineación
+izquierda sin sangría	1.1.1.1 Subcapítulo 3
+
+
+En caso de ser necesario se podrá incluir un quinto nivel con tamaño de letra 11, fuente Arial, en minúsculas cursivas, estilo subtítulo numerado, alineación izquierda sin sangría.
+
+
+Espaciado
+
+Todo el documento debe tener espaciado de 1,5. Las tablas pueden usar espaciado simple.
+
+
+
+Numeración
+
+Un resumen de la numeración se presenta a continuación:
+
+Elemento	Estilo	Número
+Tabla	Superior	al	elemento, Alineado centro.	Continuo, Número arábigo.
+ 
+Figura	Inferior	al	elemento, Alineado centro	Continuo, Número arábigo.
+Ecuación	A la derecha del elemento, Alineado	al	margen
+derecho.	Continúo	relacionado con	el capítulo, Número arábigo,
+Páginas	Inferior Centro	Continuo, Número romano hasta Abstract y en arábigo hasta el final.
+Anexos		Continuo, Número romano.
+
+
+Extensión del documento
+
+El documento de Trabajo de Integración Curricular tenga una extensión de entre 40 y 60 hojas, sin considerar los anexos.
+Guía de estilo para referencias de la IEEE.
+
+Basic format for books:
+J. K. Author, “Title of chapter in the book,” in Title of His Published Book, xth ed. City of Publisher, (only U.S. State), Country: Abbrev. of Publisher, year, ch. x, sec. x, pp. xxx–xxx.
+Examples:
+[1]	G. O. Young, “Synthetic structure of industrial plastics,” in Plastics, 2nd ed., vol. 3, J . Peters, Ed . New Y o r k , NY, USA: McGraw-Hill, 1964, pp. 15–64.
+[2]	W.-K. Chen, Linear Networks and Systems. Belmont, CA, USA: Wadsworth, 1993, pp. 123–135.
+
+Basic format for periodicals:
+J. K. Author, “Name of paper,” Abbrev. Title of Periodical, vol. x, no. x, pp. xxx-xxx, Abbrev. Month, year, DOI. 10.1109.XXX.123456.
+Examples:
+[3]	J. U. Duncombe, “Infrared navigation—Part I: An assessment of feasibility,” IEEE Trans. Electron Devices, vol. ED-11, no. 1, pp. 34–39, Jan. 1959, 10.1109/TED.2016.2628402.
+[4]	E.   P.   Wigner,   “Theory   of   traveling-wave   optical   laser,”
+Phys.	Rev.,
+vol. 134, pp. A635–A646, Dec. 1965.
+[5]	E. H. Miller, “A note on reflector arrays,” IEEE Trans. Antennas Propagat., to be published.
+
+Basic format for reports:
+J. K. Author, “Title of report,” Abbrev. Name of Co., City of Co., Abbrev. State, Country, Rep. xxx, year.
+Examples:
+ 
+[6]	E. E. Reber, R. L. Michell, and C. J. Carter, “Oxygen absorption in the earth’s atmosphere,” Aerospace Corp., Los Angeles, CA, USA, Tech. Rep. TR-0200 (4230-46)-3, Nov. 1988.
+[7]	J. H. Davis and J. R. Cogdell, “Calibration program for the 16-foot antenna,” Elect. Eng. Res. Lab., Univ. Texas, Austin, TX, USA, Tech. Memo. NGL-006-69-3, Nov. 15, 1987.
+
+Basic format for handbooks:
+Name of Manual/Handbook, x ed., Abbrev. Name of Co., City of Co., Abbrev. State, Country, year, pp. xxx-xxx.
+
+
+
+
+Examples:
+[8]	Transmission Systems for Communications, 3rd ed., Western Electric Co., Winston-Salem, NC, USA, 1985, pp. 44–60.
+[9]	Motorola Semiconductor Data Manual, Motorola Semiconductor Products Inc., Phoenix, AZ, USA, 1989.
+
+Basic format for books (when available online):
+J. K. Author, “Title of chapter in the book,” in Title of Published Book, xth ed. City of Publisher, State, Country: Abbrev. of Publisher, year, ch. x, sec. x, pp. xxx–xxx. [Online]. Available: http://www.web.com
+Examples:
+[10]	G. O. Young, “Synthetic structure of industrial plastics,” in Plastics, vol. 3, Polymers of Hexadromicon, J. Peters, Ed., 2nd ed. New York, NY, USA: McGraw-Hill, 1964, pp. 15-64. [Online]. Available: http://www.bookref.com.
+[11]	The Founders’ Constitution, Philip B. Kurland and Ralph Lerner, eds., Chicago, IL, USA: Univ. Chicago Press, 1987. [Online]. Available: http://press-pubs.uchicago.edu/founders/
+[12]	The Terahertz Wave eBook. ZOmega Terahertz Corp., 2014. [Online]. Available:	http://dl.z-thz.com/eBook/zomega_ebook_pdf_1206_sr.pdf. Accessed on: May 19, 2014.
+[13]	Philip B. Kurland and Ralph Lerner, eds., The Founders’ Constitution. Chicago, IL, USA: Univ. of Chicago Press, 1987, Accessed on: Feb. 28, 2010, [Online] Available: http://press-pubs.uchicago.edu/founders/
+
+Basic format for journals (when available online):
+J. K. Author, “Name of paper,” Abbrev. Title of Periodical, vol. x, no. x, pp. xxx-xxx, Abbrev. Month, year. Accessed on: Month, Day, year, DOI: 10.1109.XXX.123456, [Online].
+Examples:
+[14]	J. S. Turner, “New directions in communications,” IEEE J. Sel. Areas Commun., vol. 13, no. 1, pp. 11-23, Jan. 1995.
+ 
+[15]	W. P. Risk, G. S. Kino, and H. J. Shaw, “Fiber-optic frequency shifter using a surface acoustic wave incident at an oblique angle,” Opt. Lett., vol. 11, no. 2,
+pp. 115–117, Feb. 1986.
+[16]	P. Kopyt et al., “Electric properties of graphene-based conductive layers from DC up to terahertz range,” IEEE THz Sci. Technol., to be published. DOI: 10.1109/TTHZ.2016.2544142.
+
+Basic format for papers presented at conferences (when available online):
+J.K. Author. (year, month). Title. presented at abbrev. conference title. [Type of Medium]. Available: site/path/file
+
+
+
+
+
+
+
+Example:
+[17]	PROCESS Corporation, Boston, MA, USA. Intranets: Internet technologies deployed behind the firewall for corporate productivity. Presented at INET96 Annual	Meeting.	[Online].	Available: http://home.process.com/Intranets/wp2.htp
+
+
+Basic format for reports  and  handbooks (when available online):
+J. K. Author. “Title of report,” Company. City, State, Country. Rep. no., (optional: vol./issue), Date. [Online] Available: site/path/file
+Examples:
+[18]	R. J. Hijmans and J. van Etten, “Raster: Geographic analysis and modeling with raster data,” R Package Version 2.0-12, Jan. 12, 2012. [Online]. Available: http://CRAN.R-project.org/package=raster
+[19]	Teralyzer. Lytera UG, Kirchhain, Germany [Online]. Available: http://www.lytera.de/Terahertz_THz_Spectroscopy.php?id=home, Accessed on: Jun. 5, 2014
+
+Basic format for computer programs and electronic documents (when available online):
+Legislative body. Number of Congress, Session. (year, month day). Number of bill or resolution, Title. [Type of medium]. Available: site/path/file
+NOTE: ISO recommends that capitalization follow the accepted practice for the language or script in which the information is given.
+Example:
+[20]	U.S. House. 102nd Congress, 1st Session. (1991, Jan. 11). H. Con. Res. 1, Sense of the Congress on Approval of Military Action. [Online]. Available: LEXIS Library: GENFED File: BILLS
+ 
+
+Basic format for patents (when available online):
+Name of the invention, by inventor’s name. (year, month day). Patent Number [Type of medium]. Available: site/path/file
+Example:
+[21]	Musical toothbrush with mirror, by L.M.R. Brooks. (1992, May 19). Patent D 326 189
+[Online]. Available: NEXIS Library: LEXPAT File: DES
+
+
+
+Basic format for conference proceedings (published):
+J. K. Author, “Title of paper,” in Abbreviated Name of Conf., City of Conf., Abbrev. State (if given), Country, year, pp. xxxxxx.
+Example:
+[22]	D. B. Payne and J. R. Stern, “Wavelength-switched pas- sively coupled single-mode optical network,” in Proc. IOOC-ECOC, Boston, MA, USA, 1985,
+pp. 585–590.
+
+Example for papers presented at conferences (unpublished):
+[23]	D. Ebehard and E. Voges, “Digital single sideband detection for interferometric sensors,” presented at the 2nd Int. Conf. Optical Fiber Sensors, Stuttgart, Germany, Jan. 2-5, 1984.
+
+Basic format for patents:
+J. K. Author, “Title of patent,” U.S. Patent x xxx xxx, Abbrev. Month, day, year.
+Example:
+[24]	G. Brandli and M. Dick, “Alternating current fed power supply,” U.S. Patent 4 084 217, Nov. 4, 1978.
+
+Basic format for theses (M.S.) and dissertations (Ph.D.):
+a)	J. K. Author, “Title of thesis,” M.S. thesis, Abbrev. Dept., Abbrev. Univ., City of Univ., Abbrev. State, year.
+b)	J. K. Author, “Title of dissertation,” Ph.D. dissertation, Abbrev. Dept., Abbrev. Univ., City of Univ., Abbrev. State, year.
+Examples:
+[25]	J. O. Williams, “Narrow-band analyzer,” Ph.D. dissertation, Dept. Elect. Eng., Harvard Univ., Cambridge, MA, USA, 1993.
+[26]	N. Kawasaki, “Parametric study of thermal and chemical nonequilibrium nozzle flow,” M.S. thesis, Dept. Electron. Eng., Osaka Univ., Osaka, Japan, 1993.
+ 
+Basic format for the most common types of unpublished references:
+a)	J. K. Author, private communication, Abbrev. Month, year.
+b)	J. K. Author, “Title of paper,” unpublished.
+c)	J. K. Author, “Title of paper,” to be published.
+Examples:
+[27]	A. Harrison, private communication, May 1995.
+[28]	B. Smith, “An approach to graphs of linear forms,” unpublished.
+[29]	A. Brahms, “Representation error for real numbers in binary computer arithmetic,” IEEE Computer Group Repository, Paper R-67-85.
+
+Basic formats for standards:
+a)	Title of Standard, Standard number, date.
+b)	Title of Standard, Standard number, Corporate author, location, date.
+Examples:
+[30]	IEEE Criteria for Class IE Electric Systems, IEEE Standard 308, 1969.
+[31]	Letter Symbols for Quantities, ANSI Standard Y10.5-1968.
+
+Article number in reference examples:
+[32]	R. Fardel, M. Nagel, F. Nuesch, T. Lippert, and A. Wokaun, “Fabrication of organic light emitting diode pixels by laser-assisted forward transfer,” Appl. Phys. Lett., vol. 91, no. 6, Aug. 2007, Art. no. 061103.
+[33]	J. Zhang and N. Tansu, “Optical gain and laser characteristics of InGaN quantum wells on ternary InGaN substrates,” IEEE Photon. J., vol. 5, no. 2, Apr. 2013, Art. no. 2600111
+
+Example when using et al.:
+S. Azodolmolky et al., Experimental demonstration of an impairment aware network planning and operation tool for transparent/translucent optical networks,” J. Lightw. Technol., vol. 29, no. 4, pp. 439–448, Sep. 2011.

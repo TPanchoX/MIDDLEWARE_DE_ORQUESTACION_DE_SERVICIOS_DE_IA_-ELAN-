@@ -1,7 +1,5 @@
 from app.runners.base_runner import BaseRunner
-from app.runners.dummy_runner import DummyRunner
-from app.runners.keypoint_pipeline_runner import KeypointPipelineRunner
-from app.runners.native_pytorch_runner import NativePyTorchRunner
+from app.runners.docker_runner import DockerRunner
 from app.schemas.models import InstalledModel
 
 
@@ -21,19 +19,17 @@ class UnsupportedFrameworkError(RunnerSelectionError):
 
 class RunnerSelector:
     def select(self, model: InstalledModel) -> BaseRunner:
-        if model.runtime.mode == "dummy":
-            return DummyRunner()
-        if model.runtime.mode == "native":
-            if model.runtime.runner == "keypoint_pipeline":
-                return KeypointPipelineRunner()
-            if model.runtime.framework == "pytorch":
-                return NativePyTorchRunner()
-            raise UnsupportedFrameworkError(
-                f"Runtime framework '{model.runtime.framework}' is not supported for native execution."
-            )
         if model.runtime.mode == "docker":
-            raise RunnerSelectionError("Docker runtime will be available in a future phase.")
-        raise RunnerSelectionError(f"Runtime mode '{model.runtime.mode}' is not supported.")
+            if model.runtime.framework == "container" and model.runtime.runner == "docker_http":
+                return DockerRunner()
+            raise RunnerSelectionError(
+                "Docker runtime is supported only with runtime.framework='container' "
+                "and runtime.runner='docker_http'."
+            )
+        raise RunnerSelectionError(
+            "The final middleware only supports docker_http model backends. "
+            f"Model '{model.model_id}' declares runtime.mode='{model.runtime.mode}'."
+        )
 
 
 runner_selector = RunnerSelector()
