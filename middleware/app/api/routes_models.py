@@ -16,6 +16,7 @@ router = APIRouter(tags=["models"])
 
 @router.get("/models", response_model=ModelListResponse)
 def list_models() -> ModelListResponse:
+    """Lista los modelos instalados (resumen: id, nombre, versión, tarea, estado)."""
     return model_registry_service.list_models_response()
 
 
@@ -28,6 +29,12 @@ def list_models() -> ModelListResponse:
     },
 )
 async def install_model(file: UploadFile = File(...)) -> ModelInstallResponse:
+    """Instala un modelo desde un paquete ZIP enviado como multipart/form-data.
+
+    El flujo completo (validar manifest → extraer → registrar → docker build
+    → arranque → health check → bootstrap manifest, con rollback ante fallos)
+    vive en ModelRegistryService.install_model_package (TIC, Fase 2).
+    """
     content = await file.read()
     return model_registry_service.install_model_package(
         filename=file.filename or "model_package.zip",
@@ -41,6 +48,7 @@ async def install_model(file: UploadFile = File(...)) -> ModelInstallResponse:
     responses={404: {"model": ErrorResponse}},
 )
 def get_model(model_id: str, version: str | None = None) -> ModelDetailResponse:
+    """Detalle completo de un modelo; incluye el bloque `ui` que ELAN usa para pre-poblar el panel."""
     return ModelDetailResponse(model=model_registry_service.get_model(model_id=model_id, version=version))
 
 
@@ -54,6 +62,7 @@ def update_model_status(
     payload: ModelStatusUpdateRequest,
     version: str | None = None,
 ) -> ModelStatusUpdateResponse:
+    """Activa ("available") o desactiva ("disabled") un modelo sin desinstalarlo (escenario E-05)."""
     return model_registry_service.update_status(
         model_id=model_id,
         status=payload.status,

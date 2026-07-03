@@ -1,3 +1,18 @@
+"""
+Contratos Pydantic del flujo de inferencia (contrato ELAN ↔ middleware).
+
+Estos modelos hacen "ejecutables" los contratos descritos en el TIC: si el
+cliente Java envía un campo faltante, un tipo incorrecto o una estructura
+inválida, FastAPI responde 422 antes de ejecutar la lógica de negocio.
+
+- ``SegmentVideoRequest``: solicitud de POST /api/v1/jobs/segment-video.
+- ``JobStatus``: máquina de estados del job (RECEIVED → ... → COMPLETED /
+  FAILED / TIMEOUT).
+- ``TemporalSegment``: segmento con start_ms/end_ms/label/confidence y las
+  alternativas ``predictions`` ordenadas por rank.
+- ``SegmentVideoResponse``: respuesta con media_info, segments y la
+  trazabilidad ``ExecutionTrace`` (tiempos por etapa e historial de estados).
+"""
 from enum import Enum
 from typing import List, Literal
 

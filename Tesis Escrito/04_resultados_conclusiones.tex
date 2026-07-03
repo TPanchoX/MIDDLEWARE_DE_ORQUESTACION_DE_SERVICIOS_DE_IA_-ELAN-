@@ -1,0 +1,306 @@
+\section{Resultados, conclusiones y recomendaciones}
+
+\subsection{Resultados}
+
+Los resultados se presentan en relación directa con los tres objetivos específicos del proyecto, de modo que cada evidencia puede relacionarse con una decisión de diseño, una acción de implementación y un criterio de verificación. Esta organización permite distinguir entre los productos construidos, los contratos técnicos que se implementaron y los resultados durante la validación final. Por lo tanto, cada bloque describe los entregables obtenidos, la forma en que se integran con la arquitectura general y las métricas o evidencias utilizadas para confirmar su funcionalidad.
+
+% ── Objetivo 1 ──────────────────────────────────────────────────────────────
+\subsubsection{Análisis del protocolo AVATecH e integración con ELAN}
+
+El primer objetivo específico planteaba analizar el mecanismo de extensión AVATecH de ELAN, combinando el estudio de la documentación oficial con la ingeniería inversa del código fuente, para definir los contratos de interfaz REST y el esquema de instalación de modelos que permiten integrar servicios externos de inferencia en el flujo de anotación. Su cumplimiento produjo dos resultados complementarios. Por un lado, los contratos: la solicitud y la respuesta de inferencia que viajan por HTTP (ejemplificadas en el Anexo~B) y el esquema \textbf{manifest.json} que gobierna la instalación de modelos (Anexo~A). Por otro, su materialización en código: cinco clases principales y un conjunto de DTO implementados en el paquete \textbf{mpi.eudico.\allowbreak{}client.\allowbreak{}annotator.\allowbreak{}recognizer.\allowbreak{}ai}, organizados según el Listado~\ref{lst:estructura_clases_elan}; el inventario completo del paquete consta en el Anexo~D. La pieza central es el reconocedor \textbf{AIOrchestrationRecognizer}, que cumple la interfaz \textbf{Recognizer} de ELAN y permite que la herramienta delegue el procesamiento de video al middleware sin cambiar la base del software. Con ello, ELAN conserva su ciclo de trabajo y el procesamiento especializado queda encapsulado en un componente externo, en línea con el propósito del protocolo AVATecH \cite{auer2014avatech}.
+
+La Figura~\ref{fig:panel_elan} muestra el panel de configuración \textbf{AIOrchestrationRecognizerPanel} tal como aparece en la interfaz de ELAN cuando el usuario selecciona el reconocedor \textit{AI Orchestration Middleware Bridge}. Este panel convierte en controles visibles los parámetros que antes solo podían enviarse desde clientes externos: dirección del servidor, video a analizar, modelo de IA instalado, nivel de anotación destino y formato de etiqueta. La figura evidencia que la configuración necesaria para ejecutar una inferencia quedó incorporada en el mismo entorno donde el investigador revisa y edita sus anotaciones, sin pasos intermedios fuera de la herramienta.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{Diagramas/Panel configuracion del reconocer integrado en ELAN.png}
+    \caption{Panel de configuración del reconocedor integrado en ELAN}
+    \label{fig:panel_elan}
+\end{figure}
+
+La Figura~\ref{fig:dialogo_modelos} muestra el diálogo \textbf{AIModelManagerDialog}, accesible desde el botón \textit{Gestionar modelos\ldots} del panel. Este diálogo centraliza las operaciones de instalación, activación y desactivación de modelos sin que el usuario abandone el entorno de anotación de ELAN. Demuestra que la gestión del ciclo de vida de los modelos, que en el middleware ocurre mediante endpoints REST, quedó expuesta al usuario final a través de controles gráficos coherentes con la interfaz de ELAN: cada botón del diálogo corresponde a una operación HTTP que el investigador ya no necesita conocer.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{Diagramas/Dialogo de gestion de modelos integrados en ELAN.png}
+    \caption{Diálogo de gestión de modelos integrado en ELAN}
+    \label{fig:dialogo_modelos}
+\end{figure}
+
+El cliente HTTP \textbf{AIOrchestration\allowbreak{}MiddlewareClient}, implementado con \textbf{java.net.http.\allowbreak{}HttpClient}, usa exclusivamente HTTP/1.1 para garantizar compatibilidad con Uvicorn y evitar negociación automática de HTTP/2 en un servidor que no lo ofrece por defecto \cite{java11_httpclient,uvicorn_docs}. El método \textbf{installModel} construye manualmente el cuerpo \textbf{multipart/form-data} para enviar paquetes ZIP sin dependencias externas, mientras que \textbf{buildErrorMessage} traduce los códigos de error estructurados del middleware en mensajes legibles dentro de la interfaz gráfica de ELAN. La integración cumple el contrato AVATecH porque el reconocedor reporta progreso mediante \textbf{RecognizerHost.\allowbreak{}setProgress()}, devuelve segmentos mediante \textbf{insertSegmentation\allowbreak{}AsTier()} y responde a la cancelación del usuario mediante \textbf{stop()}. El procedimiento para compilar estas clases con Maven, registrar el reconocedor mediante el mecanismo SPI de Java e incorporar el JAR resultante a una instalación de ELAN~7.1 se describe paso a paso en el Anexo~D, de modo que la integración puede reproducirse sobre el código fuente oficial de la herramienta.
+
+% ── Objetivo 2 ──────────────────────────────────────────────────────────────
+\subsubsection{Núcleo del orquestador: API REST, cola de jobs y gestión de contenedores Docker}
+
+Para dar cumplimiento al segundo objetivo específico, enfocado en codificar el núcleo del orquestador con Python y virtualización ligera mediante Docker, incorporando control de concurrencia y gestión del ciclo de vida de los contenedores para asegurar la estabilidad durante inferencias simultáneas, se desarrolló el servicio central del middleware. Este núcleo concentra la validación de solicitudes, la exposición de endpoints, la coordinación de jobs y la entrega de métricas operativas. La decisión de usar una API REST permitió que ELAN, Postman y otros clientes se comunicaran con el mismo contrato HTTP sin depender del lenguaje interno de cada componente, siguiendo el principio de interfaces desacopladas propio de arquitecturas basadas en recursos \cite{fielding2000rest,fastapi2026features}.
+
+La API REST expone ocho endpoints organizados en cuatro grupos funcionales, tal como se resume en la Tabla~\ref{tab:endpoints_api}. El servidor Uvicorn sirve la aplicación FastAPI sobre el estándar ASGI y mantiene disponibles los endpoints de gestión, entre ellos \textbf{GET /health} y \textbf{GET /api/v1/metrics}, durante la ejecución de una inferencia prolongada. Además, el resultado de cada job queda disponible durante la sesión a través de \textbf{GET /api/v1/jobs/\{job\_id\}}, gracias a un almacén en memoria (\textbf{MemoryStore}) que conserva las respuestas completadas hasta el siguiente reinicio del servicio. Este conjunto confirma que el middleware no se limita a ejecutar inferencias: también ofrece las operaciones de observabilidad y administración necesarias para verificar el estado del servicio mientras un backend de IA consume recursos.
+
+El componente \textbf{JobQueue} implementa una cola FIFO con límite configurable de concurrencia mediante \textbf{collections.deque} y \textbf{threading.Event}, primitivas estándar de Python empleadas para coordinar espera y notificación entre hilos \cite{python_threading}. El parámetro \textbf{MIDDLEWARE\_\allowbreak{}MAX\_\allowbreak{}CONCURRENT\_\allowbreak{}JOBS}, configurable desde el \textbf{docker-compose.yml} descrito en el Anexo~C, controla cuántos backends Docker pueden ejecutar inferencias simultáneamente. Con el valor por defecto de~1, solo un contenedor carga pesos en memoria en cada instante, lo que reduce el riesgo de desbordamiento durante cargas concurrentes; mientras un job espera su turno, el resto de la API sigue respondiendo. La Tabla~\ref{tab:metricas_concurrencia} presenta los resultados de la prueba controlada con dos solicitudes simultáneas y evidencia que la segunda permanece en cola hasta que la primera libera el slot de ejecución.
+
+\begin{table}[H]
+\centering
+\caption{Métricas del sistema durante la ejecución de dos inferencias simultáneas}
+\label{tab:metricas_concurrencia}
+\small
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{4.5cm}>{\centering\arraybackslash}p{2.5cm}>{\raggedright\arraybackslash}p{5.5cm}@{}}
+\toprule
+\textbf{Métrica / Parámetro} & \textbf{Valor real} & \textbf{Interpretación} \\
+\midrule
+\texttt{total\_jobs} & 10 & Total de solicitudes procesadas en el histórico. \\
+\texttt{completed\_jobs} & 7 & Inferencias finalizadas con éxito. \\
+\texttt{active\_jobs} & 1 & Inferencia en ejecución activa en el contenedor. \\
+\texttt{queued\_jobs} & 1 & Segunda inferencia en espera dentro de la cola. \\
+\texttt{timeout\_jobs} & 1 & Trabajos que excedieron el tiempo límite establecido. \\
+\texttt{failed\_jobs} & 0 & Trabajos finalizados con error crítico del sistema. \\
+\texttt{average\_exec\_ms} & 33673.43 & Tiempo promedio de ejecución global [ms]. \\
+\texttt{last\_exec\_ms} & 32428.00 & Tiempo de respuesta de la última inferencia [ms]. \\
+\texttt{DOCKER\_TIMEOUT} & 1 & Contador de errores por expiración del contenedor. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+La Tabla~\ref{tab:metricas_concurrencia} demuestra de forma cuantitativa el aislamiento y el ordenamiento de peticiones del middleware. Al recibir dos solicitudes de inferencia en el mismo instante, los contadores internos pasaron a \texttt{active\_jobs = 1} y \texttt{queued\_jobs = 1}: el mecanismo de exclusión mutua retuvo la segunda petición en la cola FIFO mientras el contenedor procesaba la primera, evitando la saturación de los recursos del equipo. Los contadores además son coherentes entre sí: los 10 jobs del histórico se reparten entre 7 completados, 1 expirado por timeout y los 2 de la prueba en curso (1 activo y 1 en cola). Asimismo, el tiempo registrado en \texttt{last\_exec\_ms}, cercano a 32.4 segundos, ofrece una línea base del rendimiento del modelo de reconocimiento integrado.
+
+La Figura~\ref{fig:postman_health} muestra la respuesta del endpoint \textbf{GET /health} verificada desde Postman durante la validación final, correspondiente al escenario E-01. Esta evidencia confirma la disponibilidad básica del middleware antes de ejecutar operaciones más costosas, como instalación de modelos o inferencias sobre video.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{Diagramas/Respuesta del endpoint GET -health.png}
+    \caption{Respuesta del endpoint \textbf{GET /health} verificada desde Postman (escenario E-01)}
+    \label{fig:postman_health}
+\end{figure}
+
+La Figura~\ref{fig:postman_metrics} muestra la respuesta del endpoint \textbf{GET /api/v1/metrics} después de ejecutar dos inferencias exitosas y un timeout forzado. La lectura de los contadores \textbf{total\_jobs}, \textbf{completed\_jobs} y \textbf{timeout\_jobs} permite verificar que el middleware no solo procesa solicitudes, sino que conserva trazabilidad cuantitativa del resultado de cada job. Esta información fue usada como evidencia de observabilidad durante la validación final.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{Diagramas/Metricas acumuladas del middleware tras la prueba de carga controlada.png}
+    \caption{Métricas acumuladas del middleware tras la prueba de carga controlada (\textbf{GET /api/v1/metrics})}
+    \label{fig:postman_metrics}
+\end{figure}
+
+La gestión del ciclo de vida de los contenedores, segunda vertiente de este objetivo, se materializó en el componente \textbf{DockerRunner} y en el contrato de comunicación entre el middleware y el backend del modelo. Este resultado conecta la arquitectura de orquestación con el procesamiento real de video: el middleware no interpreta directamente las señas, sino que prepara el entorno, invoca el backend de IA, valida su respuesta y adapta los segmentos al formato que ELAN puede insertar en la línea de tiempo.
+
+El \textbf{DockerRunner} traduce la ruta del video del sistema anfitrión al punto de montaje interno del contenedor, \textbf{/data/videos}, verifica la disponibilidad del backend mediante polling sobre \textbf{GET /health} con reintentos cada 250~ms y transforma la respuesta JSON del backend en objetos \textbf{TemporalSegment} validados por Pydantic \cite{pydantic2026models}. El aporte del TIC en este objetivo no es el modelo de reconocimiento en sí, sino la capa que permite integrarlo: el middleware orquesta la ejecución sin conocer la arquitectura interna del pipeline, y cualquier backend que cumpla el contrato de \textbf{/health}, \textbf{/infer} y \textbf{manifest.json} puede ocupar ese lugar. Lo que sí corresponde al middleware es el postprocesamiento de las salidas, es decir, la validación y adaptación de la respuesta del backend en anotaciones semánticas compatibles con ELAN. Para la validación se utilizó el backend \textbf{lsec\_bio\_gloss\_final\_v1}, cuyo desarrollo no forma parte del alcance de este trabajo; su pipeline interno se ejecuta encapsulado en un contenedor Docker, con las dependencias aisladas de ELAN y del middleware \cite{docker2026overview}. El manifest completo con el que se instala este paquete se recoge en el Anexo~A.
+
+La Figura~\ref{fig:postman_inferencia} muestra la respuesta de una inferencia exitosa ejecutada desde Postman contra el endpoint \textbf{POST /api/v1/jobs/segment-video}. La respuesta incluye segmentos detectados, marcas temporales, etiquetas de glosa, predicciones alternativas y trazabilidad de ejecución. Esta figura vincula el contrato REST con el resultado lingüístico esperado, porque evidencia que el backend devuelve datos suficientes para que el middleware construya anotaciones temporales compatibles con ELAN. Un ejemplo completo de esta respuesta, con la descripción campo por campo del objeto \textbf{trace} y de sus etapas, se encuentra en el Anexo~B.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{Diagramas/Respuesta de inferencia exitosa.png}
+    \caption{Respuesta de inferencia exitosa desde Postman: segmentos con glosas y trazabilidad completa}
+    \label{fig:postman_inferencia}
+\end{figure}
+
+La Tabla~\ref{tab:latencia_etapas} resume los tiempos reales observados en el campo \textbf{trace.stages} de la respuesta del middleware durante la inferencia de validación. Los valores corresponden a un video de LSEc con una duración de 8.51~segundos (510 fotogramas a 59.94~FPS) procesado en un equipo con CPU Intel Core i5 de 12.ª generación. La desagregación por etapas permite distinguir el costo de validación, espera en cola, arranque del contenedor, comprobación de disponibilidad, inferencia y postprocesamiento. La tabla evidencia que la sobrecarga introducida por la orquestación es marginal: la suma de validación, cola y postprocesamiento apenas llega a unos pocos milisegundos, mientras que el tiempo restante transcurre dentro del backend y depende del modelo instalado, no del middleware. El arranque del contenedor registró 0~ms porque este ya se encontraba activo (\textit{warm start}), condición habitual después de la primera ejecución.
+
+\begin{table}[H]
+\centering
+\caption{Latencia por etapa de inferencia (modelo \textbf{lsec\_bio\_gloss\_final\_v1})}
+\label{tab:latencia_etapas}
+\small
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{4.4cm}>{\centering\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}p{5.0cm}@{}}
+\toprule
+\textbf{Etapa} & \textbf{Latencia medida (ms)} & \textbf{Descripción} \\
+\midrule
+Validación del modelo          & 1        & Consulta al registro de modelos \\
+Espera en cola (\texttt{QUEUED})   & 1        & Sin contención con 1 job activo \\
+Arranque del contenedor         & 0        & Contenedor previamente activo (\textit{warm start}) \\
+Comprobación de disponibilidad del backend        & 4        & Polling hasta disponibilidad \\
+Inferencia en el backend        & 34\,181  & Procesamiento de 510 fotogramas \\
+Postprocesamiento               & 1        & Validación y adaptación de respuesta \\
+\textbf{Total (wall-clock)}    & \textbf{34\,198} & Desde \texttt{RECEIVED} hasta \texttt{COMPLETED} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+La Figura~\ref{fig:elan_anotaciones} muestra las anotaciones generadas por el sistema en la línea de tiempo de ELAN después de ejecutar el reconocedor desde el panel integrado, de acuerdo con los escenarios E-07 y E-08. Esta evidencia es relevante porque cierra el flujo completo: la inferencia se ejecuta fuera de ELAN, pero los resultados regresan como anotaciones temporales ubicadas en el nivel de anotación configurado. Las marcas de inicio y fin de cada anotación deben coincidir con los intervalos de señas visibles en el video procesado, ya que esa correspondencia confirma que la segmentación temporal fue interpretada correctamente por la herramienta de anotación.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{Diagramas/Anotaciones generadas automáticamente en ELAN por el reconocedor integrado.png}
+    \caption{Anotaciones generadas automáticamente en ELAN por el reconocedor integrado (escenario E-07 y E-08)}
+    \label{fig:elan_anotaciones}
+\end{figure}
+
+% ── Objetivo 3 ──────────────────────────────────────────────────────────────
+\subsubsection{Validación técnica mediante pruebas funcionales}
+
+El tercer objetivo específico, enfocado en validar el desempeño técnico del middleware mediante pruebas de carga en escenarios de anotación de LSEc, se cubrió con quince escenarios de validación distribuidos en cuatro categorías: conectividad, gestión de modelos, inferencia y manejo de errores. La validación midió latencia de comunicación, consumo de recursos computacionales y recuperación ante fallos. Esta organización permitió comprobar tanto el comportamiento observable desde las interfaces visibles para el usuario como la consistencia interna de archivos, métricas, contenedores y rutas montadas.
+
+La Tabla~\ref{tab:escenarios_validacion} sintetiza los resultados de los escenarios más representativos de la validación final. Los identificadores E-01 a E-15 funcionan como etiquetas de trazabilidad para relacionar cada acción de prueba con su respuesta HTTP esperada, su resultado observado y la evidencia obtenida durante la ejecución.
+
+\begin{table}[H]
+\centering
+\caption{Resultados de escenarios de validación final (selección representativa)}
+\label{tab:escenarios_validacion}
+\scriptsize
+\renewcommand{\arraystretch}{1.15}
+\setlength{\tabcolsep}{4pt}
+
+\begin{tabular}{
+    >{\centering\arraybackslash}p{1.0cm}
+    >{\raggedright\arraybackslash}p{3.2cm}
+    >{\centering\arraybackslash}p{1.5cm}
+    >{\centering\arraybackslash}p{1.6cm}
+    >{\raggedright\arraybackslash}p{5.4cm}
+}
+\toprule
+\textbf{ID} & \textbf{Escenario} & \textbf{HTTP esp.} & \textbf{Resultado} & \textbf{Observación} \\
+\midrule
+
+E-01 &
+Comprobación de disponibilidad desde Postman &
+200 &
+$\checkmark$ &
+Respuesta menor a 50 ms. \\
+
+E-02 &
+Comprobación de disponibilidad desde ELAN &
+200 &
+$\checkmark$ &
+El panel muestra el estado de servidor disponible. \\
+
+E-03 &
+Instalación de modelo mediante ZIP &
+200 &
+$\checkmark$ &
+Imagen Docker construida y registry actualizado. \\
+
+E-04 &
+Listado de modelos &
+200 &
+$\checkmark$ &
+Modelo visible con estado \texttt{available}. \\
+
+E-05 &
+Activar o desactivar modelo &
+200 &
+$\checkmark$ &
+La solicitud \texttt{PATCH} actualiza el estado en el registry. \\
+
+E-06 &
+Instalación duplicada &
+409 &
+$\checkmark$ &
+Error controlado \texttt{MODEL\_ALREADY\_EXISTS}. \\
+
+E-07 &
+Inferencia exitosa desde ELAN &
+200 &
+$\checkmark$ &
+Anotaciones generadas en el nivel de anotación \texttt{AUTO\_GLOSS\_SEGMENTS}. \\
+
+E-08 &
+Verificación visual de anotaciones &
+N/A &
+$\checkmark$ &
+Segmentos alineados temporalmente en la línea de tiempo. \\
+
+E-09 &
+Inferencia exitosa desde Postman &
+200 &
+$\checkmark$ &
+Campo \texttt{trace} con tiempos por etapa. \\
+
+E-10 &
+Video inexistente &
+502 &
+$\checkmark$ &
+Error controlado \texttt{DOCKER\_INFERENCE\_ERROR}. \\
+
+E-11 &
+Modelo desactivado &
+409 &
+$\checkmark$ &
+Error controlado \texttt{MODEL\_DISABLED}. \\
+
+E-12 &
+Middleware detenido desde ELAN &
+N/A &
+$\checkmark$ &
+ELAN informa que el servicio no está disponible. \\
+
+E-13 &
+Timeout forzado con \texttt{timeout\_sec = 1} &
+504 &
+$\checkmark$ &
+Error controlado \texttt{DOCKER\_TIMEOUT}. \\
+
+E-14 &
+Contenedor del modelo detenido &
+200 &
+$\checkmark$ &
+DockerRunner reinicia el contenedor automáticamente. \\
+
+E-15 &
+Métricas después de fallos &
+200 &
+$\checkmark$ &
+Contadores \texttt{timeout\_jobs} y \texttt{error\_counts} actualizados correctamente. \\
+
+\bottomrule
+\end{tabular}
+\end{table}
+
+La Tabla~\ref{tab:consumo_recursos} resume el consumo de recursos medido con \textbf{docker stats} durante la inferencia completa con el modelo \textbf{lsec\_bio\_gloss\_final\_v1}, procesando el mismo video de 8.51 segundos. La medición se realizó a nivel de contenedores porque el middleware y el backend consumen recursos de forma muy distinta: el middleware mantiene un perfil bajo ($\sim$0.13\,\% de CPU y $\sim$52.45\,MiB de RAM), asociado estrictamente a la orquestación, la validación y las métricas. El consumo intensivo se concentra en el contenedor del backend, que utiliza $\sim$194.89\,\% de CPU (casi dos núcleos completos) y $\sim$1.4\,GiB de memoria para ejecutar el pipeline de inferencia visual \cite{docker_cli_stats}. Esta asimetría respalda una decisión de diseño central del sistema: como el costo computacional vive en el backend, es posible detener o reemplazar modelos sin afectar la disponibilidad del orquestador.
+
+\begin{table}[H]
+\centering
+\caption{Consumo de recursos durante inferencia (medición real con \texttt{docker stats})}
+\label{tab:consumo_recursos}
+\small
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{3.8cm}>{\centering\arraybackslash}p{2.8cm}>{\centering\arraybackslash}p{2.8cm}>{\raggedright\arraybackslash}p{3.2cm}@{}}
+\toprule
+\textbf{Contenedor} & \textbf{CPU (\%)} & \textbf{RAM} & \textbf{Observación} \\
+\midrule
+Middleware (\texttt{elan-ai-middleware}) & 0.13 & 52.45\,MiB & Rol de orquestación \\
+Backend del modelo (\texttt{elan-ai-model-...}) & 194.89 & 1.4\,GiB & Pipeline de inferencia \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Los escenarios de caja blanca confirmaron la consistencia del estado interno después de las operaciones principales. El archivo \textbf{registry.json} reflejó la entrada correcta del manifest tras la instalación; el mecanismo de bootstrap manifests recuperó el registro automáticamente después de eliminar \textbf{registry.json} y reiniciar el middleware; la traducción de la ruta del video quedó registrada en los logs del backend bajo el prefijo \textbf{/data/videos}; y \textbf{docker inspect} confirmó el montaje correcto del directorio de videos. Estas comprobaciones complementan los códigos HTTP porque verifican que el estado persistente y la infraestructura Docker quedan coherentes después de cada operación.
+
+En conjunto, los tres bloques de resultados cubren el ciclo completo del sistema: el primero demuestra que ELAN puede delegar el procesamiento sin perder su flujo de anotación y que los contratos definidos sostienen esa comunicación; el segundo, que el orquestador regula la carga, gestiona los contenedores y devuelve la inferencia como anotaciones temporales utilizables; y el tercero, que el comportamiento se mantiene predecible tanto en operación normal como ante fallos. Los anexos A~a~D complementan estos resultados con los artefactos necesarios para reproducirlos: el contrato de empaquetado, un ejemplo íntegro de respuesta, la configuración de despliegue y el procedimiento de compilación e integración en ELAN.
+
+\vspace{1\baselineskip}
+
+
+\subsection{Conclusiones}
+
+El presente trabajo confirmó que es posible incorporar servicios de Inteligencia Artificial al flujo de anotación de ELAN sin alterar de manera profunda su arquitectura. La solución desarrollada actúa como una capa intermedia entre la herramienta de anotación y los modelos de reconocimiento, de modo que el investigador puede conservar su entorno habitual de trabajo mientras accede a resultados automáticos que luego pueden ser revisados y corregidos. A partir de los objetivos planteados y de la validación realizada, se establecen las siguientes conclusiones.
+
+\begin{enumerate}
+    \item El análisis de ELAN y de su mecanismo de extensión permitió comprender cómo debe incorporarse un proceso externo dentro de la línea de tiempo de anotación. Esta revisión fue fundamental para que la solución no funcionara como una herramienta aislada, sino como un apoyo integrado al proceso que ya realiza el investigador. En lugar de reemplazar el criterio humano, el sistema entrega segmentos y etiquetas preliminares que pueden ser aceptados, ajustados o descartados dentro de ELAN. De esta forma, la integración respeta el uso lingüístico de la herramienta y mantiene la anotación final bajo responsabilidad del especialista.
+
+    \item La arquitectura propuesta demostró que separar la anotación, la orquestación y la inferencia facilita la integración de tecnologías distintas sin comprometer la estabilidad del sistema. ELAN se mantiene como espacio de revisión y edición; el middleware organiza las solicitudes, valida la información y coordina la ejecución; y los modelos procesan los videos en un entorno independiente. Esta división reduce el acoplamiento entre componentes, evita que las dependencias de los modelos afecten a ELAN y deja una base más ordenada para incorporar nuevos servicios de reconocimiento en el futuro.
+
+    \item El uso de una arquitectura local permitió proteger los videos y anotaciones del investigador, ya que la información no necesita salir de la estación de trabajo para ser procesada. Además, el control de la ejecución de inferencias evitó que varios procesos pesados compitieran sin coordinación por los mismos recursos del equipo. Esta decisión es importante en escenarios de investigación, donde los equipos disponibles pueden tener capacidades limitadas y donde la estabilidad de la herramienta de anotación es tan relevante como la precisión del modelo utilizado.
+
+    \item Las pruebas realizadas mostraron que el middleware responde de manera controlada ante situaciones esperadas y ante fallos comunes, como videos inexistentes, modelos no disponibles, tiempos de espera excedidos o contenedores detenidos. La validación no se limitó a comprobar respuestas exitosas; también permitió observar cómo el sistema conserva su estado, informa los errores y mantiene disponible la consulta de progreso y métricas. Esto confirma que la solución no solo ejecuta inferencias, sino que también ofrece condiciones mínimas de trazabilidad y diagnóstico para un uso real.
+
+    \item La principal contribución del TIC es una arquitectura local, extensible y desacoplada que acerca los modelos de Inteligencia Artificial al trabajo cotidiano de anotación en Lengua de Señas Ecuatoriana. El sistema no pretende sustituir la revisión lingüística ni resolver por sí solo el problema del reconocimiento automático, sino ofrecer una vía práctica para que los resultados de esos modelos puedan llegar a ELAN como anotaciones temporales editables. Con ello, se abre la posibilidad de reducir tareas repetitivas, apoyar la exploración de material audiovisual y facilitar futuras investigaciones que requieran integrar nuevos modelos sin reconstruir toda la herramienta.
+\end{enumerate}
+
+\vspace{1\baselineskip}
+
+\subsection{Recomendaciones}
+
+A partir de los resultados obtenidos, el sistema puede seguir creciendo sin perder la idea central que guio este trabajo: mantener a ELAN como herramienta principal de anotación y usar el middleware como apoyo para integrar modelos externos de forma controlada. Las siguientes recomendaciones proponen mejoras futuras orientadas a fortalecer la estabilidad, facilitar el mantenimiento y aumentar la utilidad de la solución en proyectos reales de documentación y análisis de LSEc.
+
+\begin{enumerate}
+    \item Conviene mejorar la administración de los recursos de ejecución para que el sistema pueda adaptarse mejor a equipos con distintas capacidades. Una posible línea de trabajo es incorporar un planificador que considere si cada modelo requiere CPU, GPU o una cantidad mayor de memoria antes de iniciar una inferencia. Con ello, los modelos livianos podrían ejecutarse con mayor flexibilidad, mientras que los más exigentes continuarían protegidos por límites que eviten saturar el equipo del investigador.
+
+    \item Es aconsejable fortalecer el almacenamiento local de la información de modelos instalados. Aunque el archivo actual cumple su función, una base de datos ligera permitiría registrar cambios de forma más segura, consultar versiones con mayor facilidad y reducir el riesgo de inconsistencias si el servicio se detiene de manera inesperada. Esta mejora debería mantenerse simple y local, de modo que no complique la instalación ni contradiga el principio de soberanía de los datos planteado en el proyecto.
+
+    \item Se debería ampliar el conjunto de modelos probados con la arquitectura desarrollada. Para ello, es importante documentar y empaquetar nuevos modelos de reconocimiento de LSEc siguiendo el mismo formato de instalación usado en este TIC. Esta continuidad permitiría comprobar la flexibilidad real del middleware frente a modelos con distintos enfoques, por ejemplo aquellos orientados a señas específicas, glosas más amplias o información no manual como expresiones faciales y postura corporal.
+
+    \item También sería valioso mejorar la interacción del investigador con los resultados generados por la IA. Una extensión futura del panel en ELAN podría presentar no solo la etiqueta principal, sino también alternativas de glosa cuando el modelo las entregue. Esto ayudaría a que la revisión sea más transparente y útil, porque el especialista tendría más información para decidir si acepta una anotación, la corrige o la descarta antes de incorporarla definitivamente a la línea de tiempo.
+
+    \item Finalmente, se recomienda complementar la validación técnica con una evaluación lingüística realizada por especialistas en LSEc. Esta evaluación debería comparar las anotaciones generadas automáticamente con anotaciones de referencia, considerando no solo si la etiqueta propuesta es correcta, sino también si los tiempos de inicio y fin corresponden con el evento observado en el video. Estos resultados permitirían medir el aporte real del sistema en tareas de documentación lingüística y orientar mejoras tanto en los modelos como en la forma en que sus resultados se presentan al investigador.
+\end{enumerate}

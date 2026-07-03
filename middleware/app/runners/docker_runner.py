@@ -18,6 +18,16 @@ from app.services.docker_service import (
 
 
 class DockerRunner(BaseRunner):
+    """Runner que ejecuta inferencias en el contenedor Docker del modelo (TIC, Fase 3).
+
+    Prepara el entorno antes de cada solicitud: asegura que el contenedor
+    exista y esté corriendo (``ensure_container``), verifica su disponibilidad
+    (polling sobre ``GET /health``), traduce la ruta del video del host al
+    punto de montaje interno, construye el payload, invoca ``POST /infer`` y
+    adapta la respuesta al contrato interno del middleware. Con esta
+    separación, ``JobService`` queda libre de los detalles del SDK de Docker.
+    """
+
     runner_name = "docker_http"
     device = "container"
 
@@ -137,6 +147,12 @@ class DockerRunner(BaseRunner):
         }
 
     def _build_payload(self, request: InferenceInput) -> dict[str, Any]:
+        """Construye el payload del contrato middleware → backend.
+
+        Traduce ``media.path`` a la ruta visible en el contenedor e incluye
+        siempre ``parameters`` (aunque sea ``{}``) para que el backend lea una
+        estructura uniforme sin casos especiales.
+        """
         settings = get_settings()
         container_media_path = self._translate_media_path(
             request.media_path, settings.videos_dir
@@ -190,6 +206,13 @@ class DockerRunner(BaseRunner):
         return host_path
 
     def _adapt_response(self, *, payload: dict[str, Any], metrics: StageMetrics) -> InferenceOutput:
+        """Valida y adapta la respuesta del backend al contrato del middleware.
+
+        No basta con un HTTP 200: la respuesta debe traer ``media_info`` y
+        ``segments`` válidos (validados con Pydantic como ``TemporalSegment``);
+        de lo contrario se responde 422 UNSUPPORTED_DOCKER_CONTRACT para que
+        una respuesta incompleta nunca llegue a ELAN.
+        """
         if "segments" in payload:
             return InferenceOutput(
                 output_type=self._segment_output_type(payload),

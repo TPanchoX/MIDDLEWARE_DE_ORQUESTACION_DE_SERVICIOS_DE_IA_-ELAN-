@@ -118,29 +118,32 @@ Otros cambios en el recognizer:
 
 ---
 
-## Justificación frente a los objetivos de tesis
+## Justificación frente a los objetivos del TIC
 
-### 1. "Integrar el middleware con ELAN mediante un plugin que permita al usuario configurar y ejecutar modelos desde la interfaz"
+### 1. Objetivo específico 1 — integración de servicios externos en el flujo de anotación
 
-La fase 5 convierte el bridge de ELAN en un **gestor visual completo**. El investigador
-puede instalar un paquete ZIP de un modelo nuevo, activarlo y ejecutar la inferencia sin
-salir de ELAN ni tocar archivos de configuración. Esto cumple directamente el objetivo
-de una integración end-to-end con la herramienta de anotación.
+El objetivo 1 exige "contratos de interfaz REST y el esquema de instalación de modelos
+que permitan la integración de servicios externos de inferencias en el flujo de
+anotación". La fase 5 convierte el bridge de ELAN en un **gestor visual completo**: el
+investigador puede instalar un paquete ZIP de un modelo nuevo, activarlo y ejecutar la
+inferencia sin salir de ELAN ni tocar archivos de configuración, cerrando la
+integración end-to-end con la herramienta de anotación.
 
-### 2. "El sistema debe soportar múltiples modelos de IA sin modificar el código fuente"
+### 2. Extensibilidad — soportar múltiples modelos sin modificar código
 
 La UI lista dinámicamente todos los modelos registrados en el middleware. Añadir un
 nuevo modelo (instalando su ZIP) lo hace inmediatamente disponible en el combo de ELAN.
-No se requiere recompilar ELAN ni el middleware.
+No se requiere recompilar ELAN ni el middleware, en línea con el contrato de
+instalación definido por el `manifest.json`.
 
-### 3. "Separación de responsabilidades entre la lógica de procesamiento y la interfaz"
+### 3. Separación de responsabilidades entre lógica de procesamiento e interfaz
 
 Los DTOs (`ModelSummary`, `InstalledModelDetail`, `ModelUiConfig`) actúan como capa de
 contrato entre el middleware y ELAN. Los cambios internos del middleware (rutas,
 formato de respuesta) solo requieren ajustes en los DTOs, sin tocar la lógica del
 recognizer ni la UI.
 
-### 4. "El usuario no debe necesitar conocimientos técnicos del pipeline interno"
+### 4. Usabilidad — el usuario no necesita conocer el pipeline interno
 
 - La URL base es el único parámetro de red visible (`http://127.0.0.1:8000`).
 - Los paths de los endpoints son detalles de implementación ocultos.

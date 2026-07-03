@@ -1,3 +1,11 @@
+"""
+RunnerSelector — elige el runner según el ``runtime`` declarado en el manifest.
+
+En la implementación final solo se soporta ``mode=docker`` +
+``framework=container`` + ``runner=docker_http`` → ``DockerRunner``.
+Cualquier otra combinación responde 501 (UNSUPPORTED_RUNTIME /
+UNSUPPORTED_FRAMEWORK).
+"""
 from app.runners.base_runner import BaseRunner
 from app.runners.docker_runner import DockerRunner
 from app.schemas.models import InstalledModel

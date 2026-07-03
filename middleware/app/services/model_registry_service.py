@@ -1,3 +1,19 @@
+"""
+ModelRegistryService — instalación, validación, registro y consulta de modelos.
+
+Es el componente responsable del contrato de empaquetado del TIC (Fase 2):
+recibe un ZIP con ``manifest.json`` en la raíz, lo valida contra el schema
+Pydantic ``ModelManifest``, verifica los artefactos declarados, extrae el
+paquete, lo registra en ``registry.json`` y delega en
+``DockerLifecycleService`` la construcción y arranque del backend. Si algún
+paso de Docker falla, ejecuta rollback (quita el modelo del registry y borra
+los archivos extraídos).
+
+Resiliencia: cada instalación guarda una copia del manifest en
+``data/bootstrap_manifests/`` (``_save_bootstrap_manifest``); al arrancar,
+``_bootstrap_docker_manifests`` re-registra automáticamente los modelos si
+``registry.json`` se perdió.
+"""
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -30,6 +46,10 @@ from app.services.docker_lifecycle_service import (
 logger = logging.getLogger(__name__)
 
 
+# ── Jerarquía de errores del registry ───────────────────────────────────────
+# Cada excepción declara su error_code y el código HTTP con el que responde
+# el manejador global de main.py (400 paquete/manifest, 404 no encontrado,
+# 409 conflicto de estado).
 class ModelRegistryError(Exception):
     error_code = "MODEL_PACKAGE_INVALID"
     status_code = 400
@@ -126,6 +146,13 @@ class ModelRegistryService:
         self._models = {(model.model_id, model.version): model for model in models}
 
     def _bootstrap_docker_manifests(self) -> None:
+        """Re-registra modelos desde los manifests de respaldo al arrancar.
+
+        Escanea ``bootstrap_manifests_dir`` y agrega al registry cualquier
+        modelo Docker que no esté ya registrado. Así el sistema se recupera
+        automáticamente si ``registry.json`` fue eliminado o quedó
+        inconsistente (escenario de caja blanca B-03 del TIC).
+        """
         if self.bootstrap_manifests_dir is None:
             return
         if not self.bootstrap_manifests_dir.exists():
@@ -209,6 +236,13 @@ class ModelRegistryService:
         return model
 
     def install_model_package(self, filename: str, content: bytes) -> ModelInstallResponse:
+        """Flujo completo de instalación de un modelo desde un ZIP (Fase 2 del TIC).
+
+        Orden: validar ZIP → detectar prefijo → leer y validar manifest →
+        verificar artefactos → extraer y registrar → construir/arrancar el
+        backend Docker → guardar bootstrap manifest. Ante fallos de Docker se
+        ejecuta rollback y se responde 400 MODEL_PACKAGE_INVALID.
+        """
         if not content:
             raise ModelPackageInvalidError("Uploaded model package is empty.")
 
@@ -216,10 +250,11 @@ class ModelRegistryService:
             with zipfile.ZipFile(BytesIO(content)) as package:
                 file_names = self._validate_zip_entries(package.infolist())
 
-                # Auto-detect a common top-level directory that wraps all files.
-                # ZIP files created with Windows Explorer, Compress-Archive (without \*),
-                # or macOS "Compress" all wrap everything inside a folder.
-                # Strip it transparently so the manifest is always at logical root.
+                # Detecta un directorio raíz común que envuelva todos los archivos.
+                # Los ZIP creados con el Explorador de Windows, Compress-Archive
+                # (sin \*) o "Comprimir" de macOS envuelven todo en una carpeta.
+                # El prefijo se elimina de forma transparente para que el
+                # manifest quede siempre en la raíz lógica del paquete.
                 zip_prefix = self._detect_zip_prefix(file_names)
                 effective_names = (
                     {name[len(zip_prefix):] for name in file_names if name != zip_prefix}
@@ -236,9 +271,10 @@ class ModelRegistryService:
         except zipfile.BadZipFile as exc:
             raise ModelPackageInvalidError(f"Uploaded file '{filename}' is not a valid zip package.") from exc
 
-        # Auto-build and start Docker container when the package includes a Dockerfile.
-        # This is the "install once, use always" flow: POST /models/install → docker build
-        # → docker run → health check → ready to serve inference requests.
+        # Construcción y arranque automáticos del contenedor cuando el paquete
+        # incluye un Dockerfile. Es el flujo "instalar una vez, usar siempre":
+        # POST /models/install → docker build → docker run → health check →
+        # backend listo para atender inferencias.
         if "dockerfile" in model.artifacts:
             install_path = Path(self.resolve_install_path(model))
             self._auto_start_docker_backend(model=model, manifest=manifest, install_path=install_path)
@@ -257,15 +293,16 @@ class ModelRegistryService:
         manifest: ModelManifest,
         install_path: Path,
     ) -> None:
-        """Build Docker image and start container for a self-contained model package."""
+        """Construye la imagen Docker y arranca el contenedor del paquete instalado."""
         settings = get_settings()
-        # Pass the raw string from the env var — do NOT convert to Path nor call
-        # .resolve().  The middleware runs inside a Linux container where a Windows
-        # host path like "C:/Users/…" is not a valid absolute path; Path().resolve()
-        # would prepend the container's CWD (/app) producing "/app/C:/Users/…",
-        # which makes Docker fail with "too many colons" when used as a bind-mount
-        # source.  Docker Desktop on Windows translates the raw "C:/…" string
-        # correctly when it receives it as the host-side mount source.
+        # Se pasa la cadena cruda de la variable de entorno — NO convertir a
+        # Path ni llamar a .resolve(). El middleware corre dentro de un
+        # contenedor Linux, donde una ruta de Windows como "C:/Users/…" no es
+        # una ruta absoluta válida; Path().resolve() antepondría el CWD del
+        # contenedor (/app) produciendo "/app/C:/Users/…", y Docker fallaría
+        # con "too many colons" al usarla como origen del bind mount.
+        # Docker Desktop en Windows traduce correctamente la cadena "C:/…"
+        # cuando la recibe como origen del montaje del lado del host.
         videos_dir: str | None = settings.videos_dir if settings.videos_dir else None
 
         backend_config: dict = {}
@@ -298,7 +335,7 @@ class ModelRegistryService:
             ) from exc
 
     def _rollback_installation(self, model: InstalledModel, install_path: Path) -> None:
-        """Remove model from the in-memory registry, persist, and delete the install dir."""
+        """Rollback: quita el modelo del registry, persiste y borra el directorio extraído."""
         logger.warning(
             "Rolling back installation of model '%s' version '%s'.",
             model.model_id, model.version,
@@ -362,9 +399,10 @@ class ModelRegistryService:
         self._assert_path_inside(install_path, self.installed_dir)
 
         with self._lock:
-            # Guard against stale in-memory entries that survived a failed rollback.
-            # If the registry file no longer contains this model but _models does,
-            # the in-memory state is out of sync — heal it before raising.
+            # Protección contra entradas "fantasma" en memoria que sobrevivieron
+            # a un rollback fallido: si registry.json ya no contiene el modelo
+            # pero _models sí, el estado en memoria está desincronizado — se
+            # repara automáticamente antes de lanzar MODEL_ALREADY_EXISTS.
             if (manifest.model_id, manifest.version) in self._models:
                 persisted = any(
                     m.get("model_id") == manifest.model_id
@@ -495,17 +533,17 @@ class ModelRegistryService:
     @staticmethod
     def _detect_zip_prefix(file_names: set[str]) -> str:
         """
-        Return the common top-level directory (with trailing ``/``) shared by
-        ALL entries, or an empty string if no such prefix exists.
+        Devuelve el directorio raíz común (con ``/`` final) compartido por
+        TODAS las entradas, o cadena vacía si no existe tal prefijo.
 
-        Examples
+        Ejemplos
         --------
         ``{"pkg/manifest.json", "pkg/config/x.json"}``  →  ``"pkg/"``
         ``{"manifest.json", "config/x.json"}``           →  ``""``
 
-        This lets the service accept ZIP files that wrap all content inside
-        a single folder (the default behaviour of Windows Explorer,
-        ``Compress-Archive`` without ``\\*``, and macOS "Compress").
+        Esto permite aceptar ZIP que envuelven todo el contenido en una sola
+        carpeta (comportamiento por defecto del Explorador de Windows, de
+        ``Compress-Archive`` sin ``\\*`` y de "Comprimir" en macOS).
         """
         if not file_names:
             return ""
@@ -526,12 +564,13 @@ class ModelRegistryService:
         if not value or not value.strip():
             raise ModelPackageInvalidError("Package contains an empty path.")
 
-        # ZIP files created on Windows (Compress-Archive, Explorer, etc.) store paths with
-        # backslashes. Normalise to forward slashes before applying security checks so that
-        # valid packages from Windows hosts are not rejected.
+        # Los ZIP creados en Windows (Compress-Archive, Explorador, etc.)
+        # guardan rutas con backslash. Se normalizan a "/" antes de aplicar
+        # las verificaciones de seguridad para no rechazar paquetes válidos.
         normalized = value.replace("\\", "/")
 
-        # Reject Windows drive letters (e.g. "C:/foo") even after normalisation.
+        # Rechazar letras de unidad de Windows (p. ej. "C:/foo") — barrera de
+        # seguridad del contrato de empaquetado (TIC, Fase 2).
         if PureWindowsPath(normalized).drive:
             raise ModelPackageInvalidError(f"Unsafe package path '{value}' is not allowed.")
 

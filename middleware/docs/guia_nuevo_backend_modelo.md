@@ -387,13 +387,15 @@ curl -X POST http://localhost:8000/api/v1/models/install \
 ```
 
 El middleware:
-1. Extrae el ZIP
-2. Ejecuta `docker build` (puede tardar varios minutos la primera vez)
-3. Arranca el contenedor
-4. Espera hasta 180 s que el health check devuelva 200
-5. Registra el modelo
+1. Valida el ZIP, el `manifest.json` y los artifacts declarados
+2. Extrae el paquete a `installed/{model_id}/{version}/` y lo registra en `registry.json`
+3. Ejecuta `docker build` (puede tardar varios minutos la primera vez)
+4. Arranca el contenedor en la red `elan-ai-shared`
+5. Espera el health check hasta `backend_config.startup_timeout_sec` (180 s en este ejemplo; 120 s si se omite)
+6. Guarda el bootstrap manifest en `data/bootstrap_manifests/`
 
-Si todo va bien, responde con 200 y el objeto `InstalledModel`.
+Si todo va bien, responde 200 con `{"message": "Model installed successfully.", "model": {...}}`.
+Si el build, el arranque o el health check fallan, hace **rollback** (quita el modelo del registry y borra los archivos extraídos) y responde 400 `MODEL_PACKAGE_INVALID` con el detalle del error.
 
 ### Paso 5: Verificar que el modelo está instalado
 
@@ -402,6 +404,10 @@ curl http://localhost:8000/api/v1/models
 ```
 
 ### Paso 6: Ejecutar una inferencia
+
+> `media.path` puede ser la ruta interna `/data/videos/...` o directamente la
+> ruta del host (p. ej. `C:/Users/user/Videos/mi_video.mp4`): el middleware la
+> traduce automáticamente si está dentro de `MIDDLEWARE_VIDEOS_DIR`.
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/jobs/segment-video \
@@ -507,9 +513,15 @@ El video no está en `/data/videos/`. Verificar:
 ### El middleware no puede instalar porque el modelo ya existe
 
 ```bash
-# Opción 1: Limpiar el registry del volumen Docker
+# Limpiar el registry Y los bootstrap manifests (si no, el modelo se
+# re-registra automáticamente al reiniciar), y reiniciar el middleware:
 docker exec elan-ai-middleware sh -c 'echo "{\"models\":[]}" > /app/data/models_store/registry.json'
+docker exec elan-ai-middleware sh -c 'rm -f /app/data/bootstrap_manifests/*.json'
+docker compose restart middleware
 
-# Opción 2: Eliminar el volumen completo (⚠️ borra todos los modelos)
-docker compose down -v
+# Para eliminar también los archivos del modelo:
+docker exec elan-ai-middleware rm -rf /app/data/models_store/installed/<model_id>
 ```
+
+> Nota: `docker compose down -v` **no** borra los modelos instalados, porque
+> `./data/` es un bind mount del host y no un volumen con nombre.

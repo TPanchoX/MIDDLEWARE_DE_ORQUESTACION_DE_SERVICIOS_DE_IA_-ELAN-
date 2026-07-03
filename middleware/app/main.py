@@ -1,3 +1,17 @@
+"""
+Punto de entrada del middleware de orquestación ELAN–IA.
+
+Crea la aplicación FastAPI, registra los routers (health, models, jobs,
+metrics) y define los manejadores globales de excepciones que convierten
+cualquier error interno en la respuesta uniforme del sistema:
+
+    {"error_code": "CODIGO_DESCRIPTIVO", "detail": "Mensaje legible."}
+
+Cada excepción de dominio declara su propio ``error_code`` y ``status_code``
+(HTTP), de modo que ELAN, Postman o cualquier cliente pueda identificar la
+causa de una falla sin revisar los logs (ver capítulo de Metodología del TIC,
+Fase 1 y Fase 3).
+"""
 import logging
 
 from fastapi import FastAPI, Request
@@ -17,6 +31,9 @@ from app.services.job_service import JobNotFoundError
 from app.services.model_registry_service import ModelRegistryError
 
 
+# Configuración de logging y settings ANTES de crear la app.
+# Al importarse los servicios (singletons), el registro de modelos ya escanea
+# data/bootstrap_manifests/ y reconstruye el registry si es necesario.
 configure_logging()
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -24,10 +41,13 @@ settings = get_settings()
 app = FastAPI(
     title=settings.service_name,
     version=settings.service_version,
-    description="Local FastAPI middleware for ELAN AI orchestration.",
+    description="Middleware FastAPI local para la orquestación ELAN-IA.",
 )
 
 
+# ── Manejadores globales de errores ─────────────────────────────────────────
+# Traducen las excepciones de dominio al formato uniforme ErrorResponse.
+# Errores del registry de modelos (instalación, manifest, estado): 400/404/409.
 @app.exception_handler(ModelRegistryError)
 async def handle_model_registry_error(_: Request, exc: ModelRegistryError) -> JSONResponse:
     return JSONResponse(
@@ -36,6 +56,7 @@ async def handle_model_registry_error(_: Request, exc: ModelRegistryError) -> JS
     )
 
 
+# Runtime/framework no soportado por el selector de runners: 501.
 @app.exception_handler(RunnerSelectionError)
 async def handle_runner_selection_error(_: Request, exc: RunnerSelectionError) -> JSONResponse:
     return JSONResponse(
@@ -44,6 +65,9 @@ async def handle_runner_selection_error(_: Request, exc: RunnerSelectionError) -
     )
 
 
+# Errores del DockerRunner durante la inferencia:
+# 503 DOCKER_NOT_AVAILABLE, 404 DOCKER_IMAGE_NOT_FOUND, 502 arranque/health/
+# backend, 504 DOCKER_TIMEOUT, 422 UNSUPPORTED_DOCKER_CONTRACT.
 @app.exception_handler(DockerServiceError)
 async def handle_docker_service_error(_: Request, exc: DockerServiceError) -> JSONResponse:
     return JSONResponse(
@@ -52,6 +76,8 @@ async def handle_docker_service_error(_: Request, exc: DockerServiceError) -> JS
     )
 
 
+# Errores de build/arranque durante la INSTALACIÓN de un modelo
+# (normalmente ya convertidos a MODEL_PACKAGE_INVALID con rollback).
 @app.exception_handler(DockerLifecycleError)
 async def handle_docker_lifecycle_error(_: Request, exc: DockerLifecycleError) -> JSONResponse:
     return JSONResponse(
@@ -69,6 +95,8 @@ async def handle_job_not_found(_: Request, exc: JobNotFoundError) -> JSONRespons
     )
 
 
+# Red de seguridad: cualquier error no previsto responde 500 con un mensaje
+# genérico (el detalle completo queda en los logs, no se expone al cliente).
 @app.exception_handler(Exception)
 async def handle_unexpected_error(_: Request, exc: Exception) -> JSONResponse:
     logger.exception("Unhandled application error: %s", exc)
@@ -81,6 +109,8 @@ async def handle_unexpected_error(_: Request, exc: Exception) -> JSONResponse:
     )
 
 
+# ── Montaje de routers ──────────────────────────────────────────────────────
+# /health queda en la raíz; el resto bajo el prefijo /api/v1.
 app.include_router(health_router)
 app.include_router(models_router, prefix=settings.api_v1_prefix)
 app.include_router(jobs_router, prefix=settings.api_v1_prefix)

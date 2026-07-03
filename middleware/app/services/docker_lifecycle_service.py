@@ -1,15 +1,19 @@
 """
-DockerLifecycleService – auto build & start Docker model backends.
+DockerLifecycleService — construcción y arranque automáticos de backends.
 
-When a model package is installed via POST /models/install and its
-manifest declares a ``dockerfile`` artifact, this service:
+Cuando un paquete de modelo se instala vía POST /models/install y su manifest
+declara el artefacto ``dockerfile``, este servicio (TIC, Fase 2):
 
-  1. Runs ``docker build`` using the extracted package as build context
-     (Dockerfile at backend/Dockerfile, context = install root).
-  2. Starts the resulting container with the DockerService.
-  3. Waits for the container health check to pass.
+  1. Ejecuta ``docker build`` usando el paquete extraído como contexto de
+     construcción (Dockerfile en backend/Dockerfile, contexto = raíz del
+     paquete, lo que permite copiar weights/, vocab/ y config/).
+  2. Arranca el contenedor resultante mediante DockerService.
+  3. Espera a que el health check del backend pase (hasta
+     ``backend_config.startup_timeout_sec``; 180 s en el modelo de
+     referencia porque la primera carga de pesos es lenta, 120 s si se omite).
 
-If any step fails the registry service will rollback the installation.
+Si cualquier paso falla, ModelRegistryService ejecuta el rollback de la
+instalación y responde 400 MODEL_PACKAGE_INVALID.
 """
 
 from __future__ import annotations
@@ -82,23 +86,24 @@ class DockerLifecycleService:
         videos_dir: str | None = None,
     ) -> None:
         """
-        Build a Docker image from *install_path*/backend/Dockerfile
-        (build context = *install_path* root) and start it as a
-        container that is accessible from the middleware.
+        Construye la imagen Docker desde *install_path*/backend/Dockerfile
+        (contexto de build = raíz de *install_path*) y la arranca como un
+        contenedor accesible desde el middleware.
 
         Parameters
         ----------
         install_path:
-            Absolute path to the extracted model package directory.
+            Ruta absoluta del directorio del paquete de modelo extraído.
         model_id / model_version:
-            Used to name the container deterministically.
+            Usados para nombrar el contenedor de forma determinística
+            (``elan-ai-model-{model_id}-{version}``).
         backend_config:
-            Dict from manifest ``backend_config`` field. Recognised keys:
-            docker_image_name, docker_image_tag, container_port,
+            Dict del campo ``backend_config`` del manifest. Claves
+            reconocidas: docker_image_name, docker_image_tag, container_port,
             health_path, infer_path, startup_timeout_sec.
         videos_dir:
-            If provided, mounted read-only as ``/data/videos`` in the
-            container so the backend can read video files.
+            Si se proporciona, se monta en solo lectura como ``/data/videos``
+            dentro del contenedor para que el backend lea los videos.
         """
         image_name = str(backend_config.get("docker_image_name") or model_id).lower().replace("_", "-")
         image_tag = str(backend_config.get("docker_image_tag") or model_version)
@@ -177,16 +182,17 @@ class DockerLifecycleService:
         full_image: str,
     ) -> None:
         """
-        Two-phase health wait that gives actionable errors immediately.
+        Espera de salud en dos fases que produce errores accionables de inmediato.
 
-        Phase 1 — wait for uvicorn to bind (up to 30 s).
-            Retries on ConnectionRefused / URLError.
+        Fase 1 — esperar a que uvicorn enlace el puerto (hasta 30 s).
+            Reintenta ante ConnectionRefused / URLError.
 
-        Phase 2 — once the port responds:
-            • HTTP 200 → success.
-            • HTTP 5xx → read the body, extract the backend's own error message,
-              and raise DockerStartError immediately (no need to wait startup_timeout).
-            • HTTP 4xx → raise immediately (configuration error).
+        Fase 2 — cuando el puerto ya responde:
+            • HTTP 200 → éxito.
+            • HTTP 5xx → leer el body, extraer el mensaje de error del propio
+              backend (campo ``detail``) y lanzar DockerStartError de
+              inmediato, sin agotar el startup_timeout.
+            • HTTP 4xx → lanzar de inmediato (error de configuración).
         """
         normalized_path = health_path if health_path.startswith("/") else f"/{health_path}"
         url = f"{base_url.rstrip('/')}{normalized_path}"

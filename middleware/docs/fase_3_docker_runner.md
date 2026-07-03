@@ -68,7 +68,7 @@ Middleware container  →  http://elan-ai-model-lsec_bio_gloss_final_v1-1.0.0:80
 | Campo | Tipo | Obligatorio | Descripción |
 |---|---|---|---|
 | `job_id` | string | ✅ | Identificador único del job (cualquier string no vacío) |
-| `media.path` | string | ✅ | Ruta del video **dentro del contenedor del modelo** |
+| `media.path` | string | ✅ | Ruta del video: **ruta del host** (se traduce automáticamente) o ruta interna `/data/videos/...` |
 | `annotation.target_tier` | string | ✅ | Nombre del tier de ELAN donde se insertarán las anotaciones |
 | `annotation.default_label` | string | ✅ | Etiqueta por defecto para segmentos sin clasificación |
 | `annotation.label_mode` | string | ❌ | `"gloss_top1"` para usar la glosa top-1; `null` usa `default_label` |
@@ -81,22 +81,26 @@ Middleware container  →  http://elan-ai-model-lsec_bio_gloss_final_v1-1.0.0:80
 
 ### Sobre el campo `media.path`
 
-El video debe ser accesible **dentro del contenedor del modelo**. El middleware monta la carpeta configurada en `MIDDLEWARE_VIDEOS_DIR` en el contenedor al iniciarlo, bajo `/data/videos`.
+El video debe ser accesible **dentro del contenedor del modelo**. El middleware monta la carpeta configurada en `MIDDLEWARE_VIDEOS_DIR` en el contenedor al crearlo, bajo `/data/videos` (solo lectura).
+
+El cliente puede enviar la **ruta del host directamente** (es lo que hace ELAN): el método `DockerRunner._translate_media_path()` detecta el prefijo `MIDDLEWARE_VIDEOS_DIR` (comparación insensible a mayúsculas, tolera `\` y `/`) y lo reemplaza por el punto de montaje del contenedor antes de llamar al backend.
 
 ```
 Si MIDDLEWARE_VIDEOS_DIR = "C:/Users/imbaq/OneDrive/Desktop"
-y el archivo es: C:/Users/imbaq/OneDrive/Desktop/PruebaPato.mp4
+y media.path = "C:/Users/imbaq/OneDrive/Desktop/PruebaPato.mp4"
 
-Entonces media.path debe ser: "/data/videos/PruebaPato.mp4"
+El backend recibe: "/data/videos/PruebaPato.mp4"
 ```
 
-Si el video está en una subcarpeta:
+Las subcarpetas se conservan en la traducción:
 ```
-Archivo:    C:/Users/imbaq/OneDrive/Desktop/tesis/videos/sena.mp4
-media.path: "/data/videos/tesis/videos/sena.mp4"
+media.path:        C:/Users/imbaq/OneDrive/Desktop/tesis/videos/sena.mp4
+el backend recibe: /data/videos/tesis/videos/sena.mp4
 ```
 
-> Para usar videos en otra carpeta distinta a `MIDDLEWARE_VIDEOS_DIR`, se debe actualizar la variable en `docker-compose.yml`, reconstruir el middleware y eliminar el contenedor del modelo para que se recree con el nuevo mount.
+También se acepta la ruta interna ya traducida (`/data/videos/...`): al no coincidir con el prefijo del host, pasa sin cambios. Si la ruta no está bajo `MIDDLEWARE_VIDEOS_DIR` ni bajo el punto de montaje, el backend no podrá abrir el archivo y la inferencia fallará con `DOCKER_INFERENCE_ERROR`.
+
+> Para usar videos de otra carpeta, actualizar `MIDDLEWARE_VIDEOS_DIR` en `docker-compose.yml`, levantar de nuevo el middleware y eliminar el contenedor del modelo para que se recree con el nuevo mount.
 
 ---
 
@@ -214,15 +218,15 @@ POST /api/v1/jobs/segment-video
 ├─ [VALIDATING] JobService.create_segment_video_job()
 │   └── registry_service.get_available_model(model_id, version)
 │       ├── ✓ Modelo existe y status="available"
-│       └── ✗ 404 MODEL_NOT_FOUND o 422 MODEL_DISABLED
+│       └── ✗ 404 MODEL_NOT_FOUND o 409 MODEL_DISABLED
 │
-├─ [PREPROCESSING] RunnerSelector.select(model)
-│   └── model.runtime.mode == "docker" → DockerRunner
-│
-├─ [QUEUED] InferenceInput construido:
+├─ [PREPROCESSING] RunnerSelector.select(model) + construcción del InferenceInput:
+│   ├── model.runtime.mode == "docker" → DockerRunner
 │   ├── artifacts: dict del manifest (+ docker_image derivado de backend_config)
 │   ├── container: sección "container" del manifest
 │   └── media_path, model_id, version, annotation, parameters
+│
+├─ [QUEUED] job_queue.submit() — espera un slot FIFO si hay otro job activo
 │
 ├─ [RUNNING] DockerRunner.run(inference_input)
 │   │

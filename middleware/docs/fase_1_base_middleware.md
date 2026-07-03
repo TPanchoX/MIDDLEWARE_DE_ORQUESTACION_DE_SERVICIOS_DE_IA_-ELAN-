@@ -17,8 +17,8 @@ ELAN no ejecuta modelos directamente. En su lugar, envía solicitudes HTTP al mi
 | Validación | Pydantic v2 |
 | Servidor ASGI | Uvicorn |
 | Contenerización | Docker + Docker Compose |
-| Persistencia | Archivo JSON en volumen Docker |
-| Comunicación con modelos | HTTP interno (red Docker) |
+| Persistencia | Archivos JSON sobre bind mounts del host (`./data/`) |
+| Comunicación con modelos | HTTP interno (red Docker `elan-ai-shared`) |
 
 ---
 
@@ -54,11 +54,12 @@ El middleware y los contenedores de modelo comparten la red `elan-ai-shared`. El
 ```
 middleware/
 ├── app/
-│   ├── main.py                        ← entrada FastAPI, lifespan, montaje de routers
+│   ├── main.py                        ← entrada FastAPI, routers y exception handlers
 │   ├── api/
 │   │   ├── routes_health.py           ← GET /health
 │   │   ├── routes_models.py           ← CRUD de modelos + install
-│   │   └── routes_jobs.py             ← POST /jobs/segment-video, GET /jobs/{id}
+│   │   ├── routes_jobs.py             ← POST /jobs/segment-video, GET /jobs/{id}
+│   │   └── routes_metrics.py          ← GET /metrics
 │   ├── core/
 │   │   ├── config.py                  ← Settings (env vars)
 │   │   └── logging_config.py          ← configuración de logs
@@ -67,30 +68,31 @@ middleware/
 │   │   ├── docker_runner.py           ← DockerRunner (único runner activo)
 │   │   └── runner_selector.py         ← selecciona el runner según el manifest
 │   ├── schemas/
-│   │   ├── common.py                  ← ErrorResponse
+│   │   ├── common.py                  ← ErrorResponse / HealthResponse
 │   │   ├── jobs.py                    ← contratos de entrada/salida de jobs
-│   │   ├── models.py                  ← contratos de modelos e InstalledModel
+│   │   ├── models.py                  ← ModelManifest e InstalledModel
 │   │   ├── inference.py               ← InferenceInput / InferenceOutput (internas)
-│   │   └── metrics.py                 ← StageMetrics
+│   │   ├── metrics.py                 ← StageMetrics
+│   │   └── system_metrics.py          ← MiddlewareMetrics (GET /metrics)
 │   ├── services/
 │   │   ├── model_registry_service.py  ← instala, valida y gestiona modelos
 │   │   ├── job_service.py             ← orquesta la inferencia completa
 │   │   ├── docker_service.py          ← wrapper del SDK de Docker
-│   │   └── docker_lifecycle_service.py← build + start + health check al instalar
-│   ├── storage/
-│   │   └── memory_store.py            ← almacén en memoria de jobs completados
-│   └── models_store/
-│       ├── registry.json              ← registro local (no usado por Docker)
-│       └── installed/                 ← directorio local (no usado por Docker)
-├── model_packages/
-│   └── lsec_bio_gloss_final_v1/       ← fuente del paquete de modelo
+│   │   ├── docker_lifecycle_service.py← build + start + health check al instalar
+│   │   ├── job_queue.py               ← cola FIFO con límite de concurrencia
+│   │   └── metrics_service.py         ← contadores thread-safe en memoria
+│   └── storage/
+│       └── memory_store.py            ← almacén en memoria de jobs completados
+├── data/
+│   ├── models_store/                  ← registry.json + paquetes instalados (bind mount)
+│   └── bootstrap_manifests/           ← manifests de respaldo (bind mount)
 ├── Dockerfile                         ← imagen del middleware
 ├── docker-compose.yml                 ← orquestación
 ├── requirements.txt
 └── .gitignore
 ```
 
-> **Nota sobre `models_store/`**: cuando el middleware corre con Docker Compose, el registry real se almacena en el **volumen Docker** `middleware_models` montado en `/app/data/models_store`. La carpeta local `app/models_store/` existe solo como referencia de desarrollo.
+> **Nota sobre la persistencia**: el registry y los paquetes instalados viven en `./data/models_store` y los manifests de respaldo en `./data/bootstrap_manifests`. Ambos son **bind mounts** del host declarados en `docker-compose.yml` (montados en `/app/data/...` dentro del contenedor), por lo que sobreviven a `docker compose down -v` y a la limpieza de volúmenes de Docker.
 
 ---
 
@@ -100,13 +102,15 @@ Todas las variables se definen en `docker-compose.yml`. Se leen en `app/core/con
 
 | Variable | Valor por defecto | Descripción |
 |---|---|---|
-| `MIDDLEWARE_HOST` | `0.0.0.0` | Interfaz de escucha dentro del contenedor |
+| `MIDDLEWARE_HOST` | `0.0.0.0` (en compose) | Interfaz de escucha dentro del contenedor |
 | `MIDDLEWARE_PORT` | `8000` | Puerto del servidor |
 | `MIDDLEWARE_LOG_LEVEL` | `INFO` | Nivel de log |
-| `MIDDLEWARE_RUNTIME_PROFILE` | `final` | Perfil (desarrollo/final) |
-| `MIDDLEWARE_MODELS_STORE_DIR` | `/app/data/models_store` | Directorio del registry (en Docker) |
-| `MIDDLEWARE_VIDEOS_DIR` | `""` | Ruta Windows de la carpeta de videos (ej: `C:/Users/user/Videos`) |
+| `MIDDLEWARE_RUNTIME_PROFILE` | `final` | Perfil (`development`/`final`). En `final` solo se listan modelos Docker |
+| `MIDDLEWARE_MODELS_STORE_DIR` | `/app/data/models_store` | Directorio del registry y paquetes instalados |
+| `MIDDLEWARE_BOOTSTRAP_MANIFESTS_DIR` | `/app/data/bootstrap_manifests` | Directorio escaneado al arrancar para re-registrar modelos |
+| `MIDDLEWARE_VIDEOS_DIR` | *(requerida)* | Ruta del **host** con los videos (ej: `C:/Users/user/Videos`). Se monta como `/data/videos` (ro) en cada contenedor de modelo |
 | `MIDDLEWARE_DOCKER_NETWORK` | `elan-ai-shared` | Red Docker compartida con contenedores de modelo |
+| `MIDDLEWARE_MAX_CONCURRENT_JOBS` | `1` | Máximo de inferencias simultáneas (cola FIFO) |
 
 ---
 
@@ -251,7 +255,23 @@ Recupera el resultado de un job ya ejecutado (almacenado en memoria durante la s
 {"error_code": "JOB_NOT_FOUND", "detail": "Job 'xxx' was not found."}
 ```
 
-> ⚠️ Los jobs se almacenan **en memoria**. Si el middleware se reinicia, los jobs anteriores se pierden.
+> ⚠️ Los jobs se almacenan **en memoria** (`MemoryStore`). Si el middleware se reinicia, los jobs anteriores se pierden.
+
+---
+
+### 7.8 GET /api/v1/metrics
+
+Devuelve contadores acumulados desde el arranque del servicio (en memoria). Ver **Fase 4** para el detalle de campos.
+
+**Response 200 (ejemplo):**
+```json
+{
+  "total_jobs": 2, "completed_jobs": 1, "failed_jobs": 0, "timeout_jobs": 1,
+  "active_jobs": 0, "queued_jobs": 0,
+  "average_exec_ms": 33725.0, "last_exec_ms": 33725,
+  "error_counts": {"DOCKER_TIMEOUT": 1}
+}
+```
 
 ---
 
@@ -284,16 +304,18 @@ Todos los errores siguen el esquema `ErrorResponse`:
 
 ```
 RECEIVED → VALIDATING → PREPROCESSING → QUEUED → RUNNING → POSTPROCESSING → COMPLETED
-                                                                           └→ FAILED
+                                                                           ├→ FAILED
+                                                                           └→ TIMEOUT
 ```
 
 | Estado | Descripción |
 |---|---|
 | `RECEIVED` | Request recibido por el middleware |
 | `VALIDATING` | Se valida que el modelo existe y está disponible |
-| `PREPROCESSING` | Se prepara el runner |
-| `QUEUED` | En cola de ejecución |
+| `PREPROCESSING` | Se selecciona el runner y se construye el `InferenceInput` |
+| `QUEUED` | En espera de un slot de la cola FIFO de concurrencia |
 | `RUNNING` | Inferencia en progreso en el contenedor Docker |
-| `POSTPROCESSING` | Se adaptan los segmentos devueltos |
+| `POSTPROCESSING` | Se validan y adaptan los segmentos devueltos |
 | `COMPLETED` | Éxito — segmentos disponibles |
-| `FAILED` | Error en alguna etapa |
+| `FAILED` | Error funcional en alguna etapa |
+| `TIMEOUT` | La inferencia superó `execution.timeout_sec` (HTTP 504, `DOCKER_TIMEOUT`) |

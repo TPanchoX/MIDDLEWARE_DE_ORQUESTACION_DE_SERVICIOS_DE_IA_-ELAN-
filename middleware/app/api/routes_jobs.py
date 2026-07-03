@@ -23,6 +23,12 @@ router = APIRouter(tags=["jobs"])
     },
 )
 def create_segment_video_job(payload: SegmentVideoRequest) -> SegmentVideoResponse:
+    """Ejecuta una inferencia sobre un video (contrato ELAN → middleware).
+
+    Manejador SÍNCRONO a propósito: si no hay slots de concurrencia, el hilo
+    queda bloqueado en la cola FIFO (JobQueue) hasta su turno, sin afectar a
+    los endpoints de gestión que atienden otros hilos del pool de Uvicorn.
+    """
     return job_service.create_segment_video_job(request=payload)
 
 
@@ -32,4 +38,5 @@ def create_segment_video_job(payload: SegmentVideoRequest) -> SegmentVideoRespon
     responses={404: {"model": ErrorResponse}},
 )
 def get_job(job_id: str) -> SegmentVideoResponse:
+    """Recupera el resultado de un job completado (almacén en memoria por sesión)."""
     return job_service.get_job(job_id=job_id)

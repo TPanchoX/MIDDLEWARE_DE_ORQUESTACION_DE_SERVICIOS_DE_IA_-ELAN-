@@ -1,3 +1,14 @@
+"""
+JobService — coordinador de inferencias del middleware (TIC, Fase 3 y 4).
+
+Orquesta el ciclo completo de un job: recibe la solicitud, consulta el modelo
+en el registry, selecciona el runner, construye el ``InferenceInput``, envía
+el job a la cola FIFO, invoca el backend y valida/adaptar la respuesta para
+ELAN. Cada transición de estado (RECEIVED → VALIDATING → PREPROCESSING →
+QUEUED → RUNNING → POSTPROCESSING → COMPLETED/FAILED/TIMEOUT) queda en los
+logs y en el ``state_history`` de la trazabilidad, y actualiza los contadores
+de ``MetricsService``.
+"""
 import logging
 from time import perf_counter
 

@@ -5,55 +5,55 @@
 El alcance definido en la tesis establece tres fases para el componente. Las
 fases 1–5 cubrieron las dos primeras; esta fase cierra la tercera:
 
-> **"Fase de validación e integración con ELAN: Se desplegará el sistema en un
+> **"Por último, en la fase de validación se desplegará el sistema en un
 > entorno controlado para realizar pruebas de caja blanca y caja negra. Se
-> verificará la correcta orquestación de un modelo de prueba (dummy) sobre
-> videos de LSEC, midiendo métricas de rendimiento computacional (uso de
-> CPU/RAM) y tiempos de respuesta, documentando la arquitectura final para
-> garantizar la mantenibilidad y escalabilidad del sistema."**
+> verificará la correcta orquestación de un modelo de inteligencia artificial
+> sobre videos LSEc, registrando métricas de latencia, consumo de recursos del
+> sistema y documentando la arquitectura final para garantizar la
+> mantenibilidad y escalabilidad del sistema desarrollado."**
 
 Cada elemento de esa definición se aborda de la siguiente manera:
 
-| Requisito de tesis | Cómo se cubre en esta fase |
+| Requisito del TIC | Cómo se cubre en esta fase |
 |---|---|
 | Entorno controlado | Docker Compose (mismo en desarrollo y validación) |
 | Pruebas de caja negra | Escenarios funcionales § 2 |
 | Pruebas de caja blanca | Verificación de estado interno § 3 |
-| Modelo de prueba / dummy | El modelo real `lsec_bio_gloss_final_v1` — ver § 1.1 |
+| Modelo de IA orquestado | El modelo real `lsec_bio_gloss_final_v1` — ver § 1.1 |
 | Videos de LSEc | Video real de LSEc usado en todos los escenarios |
-| CPU/RAM | `docker stats` durante inferencia — ver § 4 |
-| Tiempos de respuesta | `GET /api/v1/metrics` — ya implementado en Fase 4 |
+| Consumo de recursos del sistema | `docker stats` durante inferencia — ver § 4 |
+| Métricas de latencia | `GET /api/v1/metrics` y `trace.stages` — implementados en Fase 4 |
 | Documentación de arquitectura | § 5 |
 
 ---
 
 ## § 1. Decisiones metodológicas
 
-### § 1.1 Por qué no se usa el runner dummy
+### § 1.1 Por qué la validación usa el modelo real y no un stub
 
-La tesis menciona "modelo de prueba (dummy)". Durante el desarrollo se
-implementó un `DummyRunner` que devolvía segmentos fijos sin procesamiento
-real. Su propósito fue validar el pipeline de ELAN → middleware → anotaciones
-de forma aislada, sin depender de un backend Docker funcional.
+Durante el desarrollo se implementó temporalmente un `DummyRunner` que
+devolvía segmentos fijos sin procesamiento real. Su propósito fue validar el
+flujo ELAN → middleware → anotaciones de forma aislada, sin depender de un
+backend Docker funcional.
 
-El runner dummy fue **eliminado al completarse la integración Docker**, y esta
-decisión es metodológicamente correcta por las siguientes razones:
+El runner dummy fue **eliminado al completarse la integración Docker**, y la
+validación final se ejecuta con el modelo real por las siguientes razones:
 
-1. **Un dummy no valida la hipótesis central.** Si el sistema solo funciona
+1. **Un stub no valida la hipótesis central.** Si el sistema solo funciona
    con respuestas predefinidas, no se demuestra que el middleware orquesta
-   correctamente un modelo de IA real. La tesis afirma que el componente
-   "permite integrar modelos de IA en ELAN"; un dummy no es un modelo de IA.
+   correctamente un modelo de IA real. El alcance del TIC exige verificar
+   "la correcta orquestación de un modelo de inteligencia artificial sobre
+   videos LSEc"; un stub no es un modelo de IA.
 
-2. **El modelo real es un superconjunto del dummy.** Todo lo que el dummy
+2. **El modelo real es un superconjunto del stub.** Todo lo que el dummy
    probaba (serialización de request, deserialización de response,
    construcción de anotaciones en ELAN) también lo prueba el modelo real, más
-   la complejidad de la inferencia genuina.
+   la complejidad de la inferencia genuina: build de imagen, carga de pesos,
+   lectura de video y ejecución del pipeline.
 
-3. **El modelo `lsec_bio_gloss_final_v1` es el "modelo de prueba" de la
-   tesis.** El término "dummy" en el alcance no se refería a un stub
-   artificial, sino a "el modelo con el que se hace la validación controlada".
-   Usar un modelo de producción real en las pruebas eleva la calidad de la
-   evidencia.
+3. **`lsec_bio_gloss_final_v1` es el modelo con el que se hace la validación
+   controlada.** Usar un modelo funcional real en las pruebas eleva la
+   calidad de la evidencia y produce métricas representativas.
 
 ### § 1.2 Por qué se mide CPU/RAM con `docker stats` y no con `psutil`
 
@@ -122,7 +122,7 @@ de las interfaces públicas.
 
 ---
 
-### E-01: Health check — middleware disponible
+### E-01: Comprobación de disponibilidad desde Postman
 
 **Objetivo:** Verificar que el middleware responde a peticiones de salud.
 
@@ -133,22 +133,31 @@ GET http://127.0.0.1:8000/health
 
 **Resultado esperado:**
 ```json
-{"status": "ok"}
+{"status": "ok", "service": "elan-ai-orchestrator", "version": "0.1.0"}
 ```
-HTTP 200.
-
-**En ELAN:** Al abrir "Gestionar modelos", el indicador muestra punto verde
-y texto "Conectado a http://127.0.0.1:8000" al hacer clic en
-"Probar conexión".
+HTTP 200, respuesta en menos de 50 ms.
 
 ---
 
-### E-02: Instalación de modelo desde ZIP
+### E-02: Comprobación de disponibilidad desde ELAN
+
+**Objetivo:** Verificar que el panel de ELAN detecta el estado del servidor.
+
+**Acción:** En el panel del reconocedor (o en "Gestionar modelos…"), pulsar
+**Probar conexión**.
+
+**Resultado esperado:** Indicador en verde con el texto
+`Conectado a http://127.0.0.1:8000`. Internamente el cliente Java ejecuta
+`GET /health`.
+
+---
+
+### E-03: Instalación de modelo mediante ZIP
 
 **Objetivo:** Verificar que un paquete ZIP válido se instala correctamente.
 
-**Acción (ELAN):** Gestionar modelos → Instalar desde ZIP → seleccionar
-`lsec_bio_gloss_final_v2_FIXED_loader.zip`.
+**Acción (ELAN):** Gestionar modelos → Instalar ZIP… → seleccionar el paquete
+del modelo `lsec_bio_gloss_final_v1`.
 
 **Resultado esperado (log del diálogo):**
 ```
@@ -162,24 +171,16 @@ POST http://127.0.0.1:8000/api/v1/models/install
 Body: form-data  →  file = <archivo .zip>
 ```
 
-**Resultado esperado:**
+**Resultado esperado:** HTTP 200 con
 ```json
-{"message": "Modelo instalado correctamente."}
+{"message": "Model installed successfully.", "model": {"model_id": "lsec_bio_gloss_final_v1", "...": "..."}}
 ```
-HTTP 200.
-
-**Resultado si el modelo ya existe (409):**
-```json
-{
-  "error_code": "MODEL_ALREADY_EXISTS",
-  "detail": "Model 'lsec_bio_gloss_final_v1' version '1.0.0' is already installed."
-}
-```
-En ELAN: `✗ Error al instalar: Model 'lsec_bio_gloss_final_v1' version '1.0.0' is already installed.`
+Además: imagen Docker construida, contenedor saludable, `registry.json`
+actualizado y bootstrap manifest generado.
 
 ---
 
-### E-03: Listado de modelos
+### E-04: Listado de modelos
 
 **Objetivo:** Verificar que todos los modelos instalados son listados.
 
@@ -206,140 +207,155 @@ GET http://127.0.0.1:8000/api/v1/models
 
 **En ELAN:** El combo del panel del reconocedor muestra el modelo disponible.
 
----
-
-### E-04: Detalle de modelo
-
-**Objetivo:** Verificar que los metadatos completos y configuración de UI del
-modelo son accesibles.
-
-**Acción:**
-```
-GET http://127.0.0.1:8000/api/v1/models/lsec_bio_gloss_final_v1
-```
-
-**Resultado esperado:** HTTP 200 con campos `model_id`, `name`, `version`,
-`task`, `status`, `runtime`, `installed_at`, `source`, y bloque `ui` con
-`defaultLabel`, `defaultTargetTier`, `labelMode`.
+> **Verificación complementaria — detalle de modelo:**
+> `GET /api/v1/models/lsec_bio_gloss_final_v1` responde HTTP 200 con
+> `model_id`, `name`, `version`, `task`, `status`, `runtime`, `installed_at`,
+> `source` y el bloque `ui` con `default_label`, `default_target_tier` y
+> `label_mode` (usados por ELAN para pre-poblar el panel).
 
 ---
 
-### E-05: Activar modelo desactivado
+### E-05: Activar o desactivar modelo
 
-**Objetivo:** Verificar que un modelo en estado `disabled` puede reactivarse.
+**Objetivo:** Verificar que el estado de un modelo puede cambiarse sin
+eliminarlo.
 
-**Acción:**
-```
-PATCH http://127.0.0.1:8000/api/v1/models/lsec_bio_gloss_final_v1/status
-Body: {"status": "available"}
-```
-
-**Resultado esperado:** HTTP 200. El modelo vuelve a estado `available`.
-
-**En ELAN:** Botón "Activar" disponible si el modelo seleccionado está
-desactivado. Tras pulsarlo: `✓ Modelo 'lsec_bio_gloss_final_v1' activado correctamente.`
-
----
-
-### E-06: Desactivar modelo activo
-
-**Objetivo:** Verificar que un modelo puede desactivarse sin eliminarse.
-
-**Acción:**
+**Acción (desactivar):**
 ```
 PATCH http://127.0.0.1:8000/api/v1/models/lsec_bio_gloss_final_v1/status
 Body: {"status": "disabled"}
 ```
 
-**Resultado esperado:** HTTP 200. Estado cambia a `disabled`.
+**Acción (reactivar):**
+```
+PATCH http://127.0.0.1:8000/api/v1/models/lsec_bio_gloss_final_v1/status
+Body: {"status": "available"}
+```
+
+**Resultado esperado:** HTTP 200 en ambos casos, con
+`{"message": "Model status updated successfully.", "model": {...}}` y el
+nuevo estado persistido en `registry.json`.
+
+**En ELAN:** Botones "Activar"/"Desactivar" según el estado del modelo
+seleccionado. Tras pulsar: `✓ Modelo 'lsec_bio_gloss_final_v1' activado correctamente.`
 
 ---
 
-### E-07: Inferencia exitosa sobre video válido
+### E-06: Instalación duplicada
 
-**Objetivo:** Verificar el flujo completo de orquestación.
+**Objetivo:** Verificar que reinstalar la misma combinación
+`(model_id, version)` se rechaza de forma controlada.
+
+**Acción:** Repetir E-03 con el mismo ZIP ya instalado.
+
+**Resultado esperado:** HTTP 409 con
+```json
+{
+  "error_code": "MODEL_ALREADY_EXISTS",
+  "detail": "Model 'lsec_bio_gloss_final_v1' version '1.0.0' is already installed."
+}
+```
+En ELAN: `✗ Error al instalar: Model 'lsec_bio_gloss_final_v1' version '1.0.0' is already installed.`
+
+---
+
+### E-07: Inferencia exitosa desde ELAN
+
+**Objetivo:** Verificar el flujo completo de orquestación desde la interfaz.
 
 **Acción (ELAN):**
 1. Panel del reconocedor → seleccionar modelo `lsec_bio_gloss_final_v1`.
 2. Seleccionar el video de LSEc cargado en el archivo `.eaf`.
-3. Pulsar **"Start"** (o botón equivalente de ELAN para ejecutar reconocedor).
+3. Pulsar **"Start"** en el diálogo de reconocedores.
 
 **Resultado esperado:**
 - ELAN muestra progreso del job.
-- Al completar, aparecen anotaciones en el tier configurado
-  (`defaultTargetTier` del modelo).
-- Las etiquetas de anotación corresponden a las glossas detectadas.
+- Al completar, aparecen anotaciones en el nivel configurado
+  (`ui.default_target_tier` del modelo, `AUTO_GLOSS_SEGMENTS`).
+- Las etiquetas de anotación corresponden a las glosas detectadas.
 
-**Acción (Postman):**
+---
+
+### E-08: Verificación visual de anotaciones
+
+**Objetivo:** Verificar que los segmentos retornados se insertan correctamente
+en la línea de tiempo de ELAN.
+
+**Evidencia a capturar:** Captura de pantalla del timeline de ELAN mostrando
+las anotaciones generadas sobre el video de LSEc. Las anotaciones deben:
+- Estar en el nivel correcto (`ui.default_target_tier` del modelo).
+- Tener tiempos de inicio/fin alineados con las señas visibles en el video.
+- Mostrar etiquetas que corresponden a glosas de LSEc.
+
+---
+
+### E-09: Inferencia exitosa desde Postman
+
+**Objetivo:** Verificar el contrato REST completo sin pasar por ELAN.
+
+**Acción:**
 ```
 POST http://127.0.0.1:8000/api/v1/jobs/segment-video
 Content-Type: application/json
 Body:
 {
-  "job_id": "test-e07",
+  "job_id": "test-e09",
   "media": {"path": "C:/Users/imbaq/OneDrive/Desktop/PruebaPato.mp4"},
   "model": {"model_id": "lsec_bio_gloss_final_v1", "version": "1.0.0"},
-  "annotation": {"target_tier": "SignBank", "default_label": "REGION", "label_mode": "gloss"},
-  "execution": {"device": "auto", "precision": "auto", "timeout_sec": 300}
+  "annotation": {"target_tier": "AUTO_GLOSS_SEGMENTS", "default_label": "LSEC_REGION", "label_mode": "gloss_top1"},
+  "execution": {"device_preference": "auto", "runner": "auto", "timeout_sec": 300}
 }
 ```
+> `media.path` acepta la ruta del host (se traduce automáticamente a
+> `/data/videos/...`) o la ruta interna ya traducida.
 
-**Resultado esperado:** HTTP 200 con lista de segmentos temporales:
+**Resultado esperado:** HTTP 200 con `status: "COMPLETED"`, `media_info`,
+segmentos en milisegundos y trazabilidad por etapas:
 ```json
 {
-  "job_id": "test-e07",
+  "job_id": "test-e09",
   "status": "COMPLETED",
+  "media_info": {"fps": 59.94, "duration_ms": 8508, "total_frames": 510},
   "segments": [
-    {"start": 0.0, "end": 1.234, "label": "SEÑA_A"},
-    {"start": 1.5,  "end": 2.890, "label": "SEÑA_B"}
+    {"start_ms": 884, "end_ms": 1518, "label": "TRABAJAR", "confidence": 0.164,
+     "predictions": [{"rank": 1, "gloss_id": 10, "gloss": "TRABAJAR", "probability": 0.164}, "..."]}
   ],
-  "exec_ms": 3200
+  "trace": {"runner": "docker_http", "exec_ms": 33725, "stages": {"...": "..."}, "state_history": ["..."]}
 }
 ```
 
 ---
 
-### E-08: Inserción de anotaciones en ELAN
-
-**Objetivo:** Verificar que los segmentos retornados se insertan correctamente
-en el tier de ELAN.
-
-**Evidencia a capturar:** Captura de pantalla del timeline de ELAN mostrando
-las anotaciones generadas sobre el video de LSEc. Las anotaciones deben:
-- Estar en el tier correcto (`defaultTargetTier` del modelo).
-- Los tiempos de inicio/fin corresponden al contenido del video.
-- Las etiquetas corresponden a glossas de LSEc.
-
----
-
-### E-09: Error — video inexistente
+### E-10: Error — video inexistente
 
 **Objetivo:** Verificar que el sistema reporta un error claro cuando el video
 no se encuentra en la ruta especificada.
 
 **Acción:** Enviar un request con un path de video que no existe.
 
-**Resultado esperado:** HTTP 400 o 502 con detalle legible. El error debe
-llegar hasta ELAN y mostrarse en el log del reconocedor.
+**Resultado esperado:** HTTP 502 con `error_code: DOCKER_INFERENCE_ERROR`.
+El backend responde con error al no poder abrir el video; el middleware
+captura el campo `detail` del body y lo propaga. El error llega hasta ELAN
+y se muestra en el log del reconocedor.
 
 ---
 
-### E-10: Error — modelo desactivado
+### E-11: Error — modelo desactivado
 
 **Objetivo:** Verificar que la inferencia falla de forma controlada si el
 modelo está en estado `disabled`.
 
-**Acción:** Desactivar el modelo (E-06) y luego intentar inferencia (E-07).
+**Acción:** Desactivar el modelo (E-05) y luego intentar inferencia (E-09).
 
 **Resultado esperado:**
 ```json
-{"error_code": "MODEL_DISABLED", "detail": "Model '...' is disabled."}
+{"error_code": "MODEL_DISABLED", "detail": "Model 'lsec_bio_gloss_final_v1' version '1.0.0' is disabled."}
 ```
 HTTP 409. En ELAN: error descriptivo en el log del reconocedor.
 
 ---
 
-### E-11: Error — middleware apagado
+### E-12: Error — middleware detenido desde ELAN
 
 **Objetivo:** Verificar que ELAN muestra un error de conectividad claro
 cuando el middleware no está disponible.
@@ -355,20 +371,7 @@ No hay crash de ELAN. El error se muestra en el log de actividad.
 
 ---
 
-### E-12: Error — contenedor de modelo detenido
-
-**Objetivo:** Verificar que cuando el contenedor del backend del modelo está
-detenido, el middleware lo gestiona correctamente.
-
-**Acción:** Detener manualmente el contenedor del modelo
-(`docker stop elan-ai-model-...`) y luego intentar inferencia.
-
-**Resultado esperado:** Error HTTP 502 con detalle sobre el fallo del backend.
-Los logs del middleware registran el intento fallido de contactar el contenedor.
-
----
-
-### E-13: Error — timeout de inferencia
+### E-13: Error — timeout de inferencia forzado
 
 **Objetivo:** Verificar que el sistema no queda bloqueado indefinidamente
 ante una inferencia que supera el tiempo límite.
@@ -383,15 +386,34 @@ Enviar con `timeout_sec: 1` (inferior al tiempo real de inferencia).
 ```json
 {"error_code": "DOCKER_TIMEOUT", "detail": "Docker inference timed out after 1s."}
 ```
-HTTP 504. El job termina; el middleware sigue disponible para nuevas peticiones.
+HTTP 504. El job termina en estado `TIMEOUT`; el middleware sigue disponible
+para nuevas peticiones y `timeout_jobs` se incrementa en las métricas.
 
 ---
 
-### E-14: Consulta de métricas tras inferencias
+### E-14: Contenedor del modelo detenido
 
-**Objetivo:** Verificar que el endpoint de métricas refleja los jobs ejecutados.
+**Objetivo:** Verificar que el middleware recupera automáticamente un
+contenedor de modelo detenido.
 
-**Acción (tras ejecutar E-07 y E-13):**
+**Acción:** Detener manualmente el contenedor del modelo
+(`docker stop elan-ai-model-lsec_bio_gloss_final_v1-1.0.0`) y luego ejecutar
+una inferencia (E-09).
+
+**Resultado esperado:** HTTP 200. `DockerService.ensure_container()` detecta
+el contenedor detenido y lo reinicia (`container.start()`) antes de la
+inferencia; en el `trace` aparece `container_start_ms > 0` (arranque en frío).
+Solo si la **imagen** fue eliminada, la respuesta es 404
+`DOCKER_IMAGE_NOT_FOUND` y el modelo debe reinstalarse.
+
+---
+
+### E-15: Métricas después de fallos
+
+**Objetivo:** Verificar que el endpoint de métricas refleja los jobs
+ejecutados, incluidos los fallidos y expirados.
+
+**Acción (tras ejecutar E-09 y E-13):**
 ```
 GET http://127.0.0.1:8000/api/v1/metrics
 ```
@@ -413,7 +435,7 @@ GET http://127.0.0.1:8000/api/v1/metrics
 
 ---
 
-### E-15: Revisión de logs del contenedor
+### Escenario complementario: revisión de logs del middleware
 
 **Objetivo:** Verificar que los logs son informativos y estructurados.
 
@@ -443,7 +465,7 @@ fue ejecutada.
 **Conocimiento interno:** La instalación escribe el modelo en
 `data/models_store/registry.json` (bind mount del host).
 
-**Acción:** Instalar un modelo (E-02).
+**Acción:** Instalar un modelo (E-03).
 
 **Verificación interna:**
 ```
@@ -467,7 +489,7 @@ y `"source": "installed"`.
 escribe un archivo `<model_id>__<version>.json` en `data/bootstrap_manifests/`.
 Esto garantiza que el modelo sobrevive a una eliminación del volumen.
 
-**Acción:** Instalar un modelo (E-02).
+**Acción:** Instalar un modelo (E-03).
 
 **Verificación interna:**
 ```
@@ -496,7 +518,8 @@ con el manifiesto del modelo.
 automáticamente desde el bootstrap manifest.
 
 **Ruta de código ejercitada:**
-`ModelRegistryService._load_bootstrap_manifests()`
+`ModelRegistryService._bootstrap_docker_manifests()` (ejecutado al construir
+el singleton del servicio durante el arranque del proceso)
 
 ---
 
@@ -600,8 +623,8 @@ curl -X POST http://127.0.0.1:8000/api/v1/jobs/segment-video \
     "job_id": "perf-test-001",
     "media": {"path": "C:/Users/imbaq/OneDrive/Desktop/PruebaPato.mp4"},
     "model": {"model_id": "lsec_bio_gloss_final_v1", "version": "1.0.0"},
-    "annotation": {"target_tier": "SignBank", "default_label": "REGION", "label_mode": "gloss"},
-    "execution": {"device": "auto", "precision": "auto", "timeout_sec": 300}
+    "annotation": {"target_tier": "AUTO_GLOSS_SEGMENTS", "default_label": "LSEC_REGION", "label_mode": "gloss_top1"},
+    "execution": {"device_preference": "auto", "runner": "auto", "timeout_sec": 300}
   }'
 ```
 
@@ -743,17 +766,19 @@ curl -X POST http://127.0.0.1:8000/api/v1/jobs/segment-video \
 
 ```
 1. ELAN              → POST /api/v1/models/install (multipart ZIP)
-2. Middleware        → Valida ZIP (contiene manifest.json)
-3. Middleware        → Extrae ZIP en models_store/
-4. Middleware        → Valida manifest.json con Pydantic
-5. Middleware        → DockerLifecycleService.build_and_start()
-6. Lifecycle         → docker build (backend/Dockerfile)
-7. Lifecycle         → DockerService.ensure_container() (crea o reusa)
-8. Lifecycle         → Health check hasta 200 OK del backend
-9. Middleware        → ModelRegistryService.register(model)
-10. Middleware       → _save_registry() → registry.json
-11. Middleware       → _save_bootstrap_manifest() → bootstrap_manifests/
-12. Middleware       → Retorna {"message": "..."} a ELAN
+2. Middleware        → Valida ZIP y detecta prefijo de carpeta raíz
+3. Middleware        → Valida manifest.json con Pydantic (ModelManifest)
+4. Middleware        → Verifica artifacts declarados dentro del ZIP
+5. Middleware        → Extrae a models_store/installed/{id}/{version}/
+                       y registra el modelo (_save_registry → registry.json)
+6. Middleware        → DockerLifecycleService.build_and_start()
+7. Lifecycle         → docker build (backend/Dockerfile, contexto = paquete)
+8. Lifecycle         → DockerService.ensure_container() (crea o reusa)
+9. Lifecycle         → Health check hasta 200 OK del backend
+10. Middleware       → _save_bootstrap_manifest() → bootstrap_manifests/
+11. Middleware       → Retorna {"message": "Model installed successfully.", model}
+    (si 7–9 fallan  → rollback: quita del registry y borra el directorio,
+     respuesta 400 MODEL_PACKAGE_INVALID)
 ```
 
 ### Decisiones de diseño que garantizan mantenibilidad
@@ -785,15 +810,18 @@ Cada ítem debe quedar documentado con captura de pantalla o texto copiado
 en el informe de validación.
 
 ### Evidencias funcionales (caja negra)
-- [ ] E-01: Captura del indicador verde en ELAN ("Conectado a...")
-- [ ] E-02: Log del diálogo ELAN mostrando instalación exitosa
-- [ ] E-03: Respuesta JSON de `GET /api/v1/models` con el modelo listado
-- [ ] E-07: Respuesta JSON de `POST /api/v1/jobs/segment-video` con segmentos
+- [ ] E-01: Respuesta JSON de `GET /health` desde Postman
+- [ ] E-02: Captura del indicador verde en ELAN ("Conectado a...")
+- [ ] E-03: Log del diálogo ELAN mostrando instalación exitosa
+- [ ] E-04: Respuesta JSON de `GET /api/v1/models` con el modelo listado
+- [ ] E-07: Progreso y anotaciones generadas al ejecutar desde ELAN
 - [ ] E-08: Captura del timeline de ELAN con anotaciones generadas
-- [ ] E-09: Mensaje de error claro ante video inexistente en ELAN
-- [ ] E-10: Mensaje de error claro ante modelo desactivado en ELAN
-- [ ] E-11: Mensaje de error de conectividad en ELAN sin crash
+- [ ] E-09: Respuesta JSON de `POST /api/v1/jobs/segment-video` con segmentos y `trace`
+- [ ] E-10: Error 502 `DOCKER_INFERENCE_ERROR` ante video inexistente
+- [ ] E-11: Error 409 `MODEL_DISABLED` ante modelo desactivado
+- [ ] E-12: Mensaje de error de conectividad en ELAN sin crash
 - [ ] E-13: Respuesta HTTP 504 con `error_code: DOCKER_TIMEOUT`
+- [ ] E-14: Inferencia exitosa tras detener el contenedor (reinicio automático)
 
 ### Evidencias de estado interno (caja blanca)
 - [ ] B-01: Contenido de `registry.json` tras instalación

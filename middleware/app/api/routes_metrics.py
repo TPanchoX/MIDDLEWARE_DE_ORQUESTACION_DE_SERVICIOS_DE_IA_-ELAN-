@@ -19,6 +19,11 @@ router = APIRouter(tags=["metrics"])
     ),
 )
 def get_metrics() -> MiddlewareMetrics:
+    """Snapshot atómico de los contadores más el estado en vivo de la cola.
+
+    active_jobs y queued_jobs no son contadores acumulados: se leen de
+    JobQueue en el momento de la consulta (TIC, Fase 4).
+    """
     data = metrics_service.snapshot(
         active_jobs=job_queue.active_count,
         queued_jobs=job_queue.queued_count,

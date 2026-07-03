@@ -1,3 +1,14 @@
+"""
+Contratos Pydantic del registro de modelos (contrato de empaquetado del TIC).
+
+``ModelManifest`` es la validación ejecutable del ``manifest.json`` que viaja
+en la raíz de cada paquete ZIP: identidad (``model_id``/``version`` con el
+patrón seguro ``[A-Za-z0-9_.-]``), tarea soportada, ``runtime`` (solo
+``docker``/``container``), artefactos con rutas relativas, contratos de
+entrada/salida y el bloque ``ui`` que ELAN usa para pre-poblar su panel.
+``InstalledModel`` extiende el manifest con el estado de instalación que se
+persiste en ``registry.json``.
+"""
 from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator

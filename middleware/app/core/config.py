@@ -1,3 +1,11 @@
+"""
+Configuración centralizada del middleware (clase ``Settings``).
+
+Todas las rutas, límites y parámetros operativos se leen desde variables de
+entorno con prefijo ``MIDDLEWARE_`` (declaradas en docker-compose.yml),
+siguiendo la práctica de configurar el comportamiento desde el entorno y no
+desde el código (TIC, Fase 1).
+"""
 from functools import lru_cache
 import os
 
@@ -14,16 +22,16 @@ class Settings(BaseModel):
     models_store_dir: str | None = Field(default=None)
     bootstrap_manifests_dir: str | None = Field(default=None)
     runtime_profile: str = Field(default="development")
-    # Directory on the HOST machine where video files are stored.
-    # When a model backend Docker container is started automatically,
-    # this path is mounted read-only at /data/videos inside the container.
-    # Set MIDDLEWARE_VIDEOS_DIR to an absolute path before using auto-install.
+    # Directorio del HOST donde se encuentran los videos.
+    # Cuando un contenedor de modelo se inicia automáticamente, esta ruta se
+    # monta en solo lectura como /data/videos dentro del contenedor.
+    # MIDDLEWARE_VIDEOS_DIR debe ser una ruta absoluta antes de instalar modelos.
     videos_dir: str | None = Field(default=None)
-    # Docker network name shared between the middleware container and the model
-    # containers it spawns.  When set, model containers are attached to this
-    # network and the middleware communicates with them via container-name DNS
-    # (no host-port mapping required).  Must match the network declared in
-    # docker-compose.yml (name: elan-ai-shared).
+    # Nombre de la red Docker compartida entre el contenedor del middleware y
+    # los contenedores de modelo que este crea.  Con la red configurada, el
+    # middleware se comunica con cada backend por nombre de contenedor (DNS
+    # interno de Docker), sin mapear puertos al host.  Debe coincidir con la
+    # red declarada en docker-compose.yml (name: elan-ai-shared).
     docker_network: str | None = Field(default=None)
     # Número máximo de jobs de inferencia que pueden ejecutarse simultáneamente.
     # Actúa como mecanismo de control de VRAM: limitar la concurrencia evita
@@ -36,6 +44,7 @@ class Settings(BaseModel):
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
+    """Construye (una sola vez) el objeto Settings desde las variables de entorno."""
     return Settings(
         service_name=os.getenv("MIDDLEWARE_SERVICE_NAME", "elan-ai-orchestrator"),
         service_version=os.getenv("MIDDLEWARE_SERVICE_VERSION", "0.1.0"),

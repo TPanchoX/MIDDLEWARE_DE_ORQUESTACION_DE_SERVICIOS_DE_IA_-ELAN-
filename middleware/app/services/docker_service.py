@@ -1,3 +1,19 @@
+"""
+DockerService — wrapper del SDK de Docker para Python usado en cada inferencia.
+
+Responsabilidades (TIC, Fase 3):
+- ``ensure_container()``: garantiza que el contenedor del modelo exista y esté
+  corriendo (lo reutiliza, lo reinicia si está detenido o lo crea desde la
+  imagen), unido a la red compartida ``elan-ai-shared``.
+- ``wait_for_health()``: polling sobre ``GET /health`` del backend cada 250 ms
+  hasta el timeout configurado.
+- ``post_json()``: envía la solicitud ``POST /infer`` al backend y distingue
+  timeout (``DOCKER_TIMEOUT``/504) de error funcional
+  (``DOCKER_INFERENCE_ERROR``/502).
+
+La jerarquía de excepciones define el mapeo error → código HTTP que consume
+el manejador global de ``main.py``.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -92,19 +108,25 @@ class DockerService:
         volumes: dict[str, Any] | None = None,
         network: str | None = None,
     ) -> DockerContainerHandle:
-        """Start (or reuse) a container for the given image.
+        """Inicia (o reutiliza) el contenedor del modelo para la imagen dada.
+
+        Ciclo de vida antes de inferir (TIC, Fase 3): si el contenedor ya
+        está corriendo se reutiliza (``container_start_ms = 0``, warm start);
+        si existe pero está detenido se reinicia; si no existe pero la imagen
+        sí, se crea uno nuevo con nombre determinístico
+        ``elan-ai-model-{model_id}-{version}``, red y volúmenes. Si falta la
+        imagen se lanza ``DockerImageNotFoundError`` (404 → reinstalar).
 
         Parameters
         ----------
         network:
-            When provided the container is attached to this Docker network and
-            the returned ``base_url`` uses the container name as hostname
-            (``http://<name>:<internal_port>``).  This enables
-            container-to-container communication without host-port mapping and
-            is required when the middleware itself runs inside Docker.
-            When *None* the container is published on a random host port and
-            ``base_url`` uses ``127.0.0.1:<host_port>`` (suitable for local /
-            development runs where the middleware is NOT in Docker).
+            Si se proporciona, el contenedor se une a esa red Docker y la
+            ``base_url`` devuelta usa el nombre del contenedor como hostname
+            (``http://<nombre>:<puerto_interno>``): comunicación
+            contenedor-a-contenedor sin mapear puertos al host, requerida
+            cuando el middleware corre dentro de Docker. Si es *None*, el
+            contenedor publica un puerto del host y la ``base_url`` usa
+            ``127.0.0.1:<host_port>`` (modo desarrollo fuera de Docker).
         """
         client = self._available_client()
         self._ensure_image_exists(client=client, image=image)
@@ -172,6 +194,13 @@ class DockerService:
         )
 
     def wait_for_health(self, *, base_url: str, health_path: str, timeout_sec: int) -> int:
+        """Espera activa a que GET /health del backend responda 2xx.
+
+        Reintenta cada 250 ms hasta ``timeout_sec`` (30 s por defecto durante
+        la inferencia, según ``container.startup_timeout_sec``). Devuelve los
+        milisegundos transcurridos, que se reportan como ``healthcheck_ms``
+        en la trazabilidad del job.
+        """
         started_at = perf_counter()
         deadline = monotonic() + timeout_sec
         url = self._join_url(base_url=base_url, path=health_path)
@@ -194,6 +223,15 @@ class DockerService:
         )
 
     def post_json(self, *, base_url: str, path: str, payload: dict[str, Any], timeout_sec: int) -> DockerHttpResult:
+        """Envía POST /infer al backend y clasifica el resultado.
+
+        - Timeout del socket → ``DockerTimeoutError`` (504, estado TIMEOUT).
+        - HTTP 4xx/5xx del backend → ``DockerInferenceError`` (502) con el
+          body del backend como detalle.
+        - Respuesta no-JSON → ``DockerInferenceError``.
+        El ``timeout_sec`` proviene de ``execution.timeout_sec`` del request
+        (300 s por defecto).
+        """
         started_at = perf_counter()
         url = self._join_url(base_url=base_url, path=path)
         body = json.dumps(payload).encode("utf-8")

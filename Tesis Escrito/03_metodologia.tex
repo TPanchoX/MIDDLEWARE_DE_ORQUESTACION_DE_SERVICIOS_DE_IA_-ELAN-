@@ -1,611 +1,822 @@
-\subsection{Metodología}
+\section{Metodología}
 
-El presente capítulo describe el enfoque, las técnicas y el proceso seguido para el desarrollo del middleware de orquestación de servicios de inteligencia artificial integrado con ELAN. Este capítulo está organizado de la siguiente forma: primero se establece el tipo de trabajo y su encuadre metodológico; luego se detallan las técnicas de recolección y análisis de información que orientaron las decisiones de diseño y construcción; a continuación se describe el proceso iterativo de desarrollo con sus seis fases, incluyendo las decisiones técnicas adoptadas y su justificación; y finalmente detallamos el conjunto de actividades que encajan de manera directa con los objetivos específicos definidos en el proyecto.
+Este capítulo describe la metodología para desarrollar y validar el middleware de orquestación integrado con ELAN. La metodología se organiza en diez apartados: enfoque y tipo de trabajo, técnicas de recolección de información, técnicas de análisis de la información, herramientas y stack tecnológico, proceso de desarrollo iterativo, contratos de comunicación, despliegue y configuración del entorno, estructura de directorios del sistema, guía de replicación y uso ético de herramientas de inteligencia artificial generativa. Para evitar ambigüedades, en este capítulo se utiliza el término \textit{apartado} para referirse a la estructura metodológica general y el término \textit{fase} solo para los incrementos del proceso de desarrollo.
 
-La finalidad de este capítulo reside no solo es describir cómo se implementó, sino también en explicar por qué cada decisión fue tomada de esa manera y no de otra. En un componente de integración donde múltiples tecnologías de distintos ecosistemas interactúan, las decisiones de diseño son tan importantes como el código final resultante por lo que este apartado expone la justificación explícita para cada elección arquitectónica.
+El apartado de desarrollo iterativo se compone de una etapa de análisis y diseño, seguida de seis fases de implementación: base del middleware, registro de modelos e instalación automática, Docker Runner e inferencia, cola de jobs y métricas, integración con la interfaz de ELAN y validación final. Esta organización permite diferenciar la estructura expositiva del capítulo respecto de los incrementos técnicos ejecutados durante el desarrollo.
 
-\vspace{1\baselineskip}
+El objetivo de esta metodología no es solo enumerar actividades, sino también explicar cómo el problema de integración se convirtió en una arquitectura coherente. El sistema desarrollado conecta una aplicación de escritorio en Java, un middleware en Python, servicios HTTP, contenedores Docker y backends de inferencia; por ello, cada decisión metodológica se justifica según su aporte a la interoperabilidad, la separación de responsabilidades, la validación de contratos y la reducción de dependencias entre componentes.
 
-\subsubsection{Enfoque y tipo de trabajo}
+\subsection{Enfoque y tipo de trabajo}
 
-El presente trabajo es de carácter aplicado-tecnológico donde su propósito no es la generación de nuevo conocimiento científico en el campo del aprendizaje automático o de la lingüística, sino el diseño, implementación y la validación de un componente de software que resuelve un problema de integración específico. Este problema es la dificultad de conectar la herramienta de anotación ELAN con modelos de inteligencia artificial modernos sin tener que modificar la arquitectura base de ELAN. Este problema de integraciónes de naturaleza técnica porque nos exige construir un componente que permita conectar sistemas tecnológicamente diferentes, desde el punto del vista de un linguista esta solución tiene impacto directo en la productividad de los proyectos de documentación lingüística.
+El trabajo es de naturaleza aplicada y tecnológica. No se trata de proponer nuevas ideas en aprendizaje automático, ni de aportar un análisis lingüístico de la LSEc, sino de diseñar, implementar y validar un componente de software que resuelve un problema concreto de integración: lograr que ELAN solicite inferencias a servicios de IA externos y reciba segmentos temporales compatibles con su flujo de anotación, sin alterar la arquitectura general de la herramienta y sin obligar al investigador a transcribir manualmente los resultados.
 
-Para el desarrollo de este componente se adoptó un enfoque iterativo e incremental, inspirado en los principios ágiles de Scrum. Este marco de trabajo permitió organizar el desarrollo en ciclos cortos donde cada iteración produce un resultado sujeto a revisión y ajuste antes de avanzar al siguiente ciclo. Dado que los requisitos técnicos exactos para la integración de ELAN con modelos de IA no estaban completamente especificados al inicio del proyecto el enfoque iterativo fue la opción más adecuada, ya que durante el proceso del desarrollo requerimos ajustes frecuentes basados en los resultados obtenidos en la evaluación de cada ciclo. Cabe recalcar que existieron ocasiones donde al culminar cierta fase la misma requería hacer modificaciones en fases anteriores. Por ejemplo, durante el análisis de las especificaciones de AVATecH en la fase de diseño no se tenía información sobre qué tipo de comunicación HTTP es soportada por el cliente Java de ELAN y durante las pruebas de integración en las fases finales se identificó que el cliente Java de ELAN no soportaba HTTP/2 que era el tipo de comunicación nativa de Uvicorn (framework seleccionado para el desarrollo del middleware), por lo que esto nos obligó a realizar ajustes en la configuración de Uvicorn para forzar el uso de HTTP/1.1.
+El componente se desarrolló de manera iterativa e incremental, tomando de los marcos ágiles la idea de ciclos cortos con revisión y adaptación continuas. El sistema creció en incrementos verificables: primero la API base, después el registro de modelos, la ejecución de contenedores, la cola de trabajos, la integración con ELAN y, al final, la validación de escenarios de fallo. Este enfoque resultó adecuado porque al inicio no se conocían todas las restricciones de integración entre ELAN, AVATecH, el cliente Java y el servidor del middleware; cada iteración sirvió para confirmar una decisión técnica, detectar incompatibilidades y ajustar componentes ya implementados sin rediseñar el sistema completo.
 
-Como se mencionó, el enfoque iterativo nos permitió dividir este trabajo en fases concretas con objetivos claros de diseño, implementación y validación. Cada fase se centró en un aspecto específico del sistema, desde la configuración base del middleware hasta la integración completa con ELAN y la gestión de modelos contenerizados. Esta división en fases facilitó la gestión del proyecto, permitiendo que cada etapa tuviera un criterio de verificación claro que actúa como condición de aceptación para avanzar a la siguiente fase. En un proyecto de esta naturaleza, donde la interacción entre componentes es compleja y los requisitos pueden evolucionar a medida que se avanza, el enfoque iterativo e incremental no solo es una metodología de desarrollo, sino que lo podemos ver como una estrategia de gestión técnica que garantiza que el sistema final se ajuste a las necesidades reales del usuario y a las limitaciones técnicas identificadas durante el proceso de desarrollo. En apartados posteriroes se detallan las actividades específicas realizadas en cada fase, los criterios de verificación aplicados y los ajustes realizados en función de los resultados obtenidos en cada iteración.
+Un ejemplo de cambio iterativo es la compatibilidad HTTP entre ELAN y el middleware. Durante las pruebas de integración, el cliente Java necesitaba comunicarse de manera confiable a través de HTTP/1.1, por lo que se ajustó la configuración del servidor ASGI que ejecuta FastAPI para evitar incompatibilidades en las solicitudes. Hallazgos de este tipo muestran que las fases de desarrollo no fueron etapas cerradas, sino ciclos con retroalimentación, en los que cada validación podía obligar a revisar decisiones previas sobre comunicación, configuración o manejo de errores.
 
-\vspace{1\baselineskip}
+\subsection{Técnicas de recolección de información}
 
-\subsubsection{Técnicas de recolección de información}
+Para evaluar los requisitos, las restricciones y las decisiones de implementación, se utilizaron tres métodos de recopilación de información: análisis documental, ingeniería inversa del código fuente de ELAN y revisión de trabajos relacionados. Estos métodos se aplicaron en paralelo. El análisis documental permitió comprender las especificaciones y tecnologías del sistema; la ingeniería inversa reveló los puntos de extensión reales en ELAN; y la revisión de trabajos relacionados permitió analizar cómo se producen los resultados de los sistemas de reconocimiento de señas y cómo deben transformarse para ser útiles en una herramienta de anotación.
 
-Para determinar los requisitos técnicos, restricciones de diseño y decisiones de implementación del sistema, se emplearon tres técnicas de recolección de información. Estas técnicas no se aplicaron de forma sucesiva, sino de manera entrelazada a lo largo del proceso, las técnicas aplicadas son las siguientes: análisis documental, ingeniería inversa del código fuente de ELAN, y revisión de trabajos relacionados y modelos existentes. Cada una de estas técnicas aportó una perspectiva diferente sobre el problema de integración, y su combinación permitió obtener una comprensión holística que guió las decisiones de diseño y construcción del sistema.
+\subsubsection{Análisis documental}
 
-\paragraph{Análisis documental.}
+La primera técnica consistió en analizar la documentación técnica. Esta revisión no se realizó solo como una actividad descriptiva, sino también como referencia para decidir qué debía implementarse en ELAN, qué debía delegarse al middleware y qué debía resolverse en los backends en contenedores.
 
-La primera técnica fue el análisis de la documentación oficial de los componentes técnicos del sistema, este análisis no se limitó simplemente a la lectura de los manuales, sino que incluyó la identificación de los fragmentos relevantes para los contratos de comunicación, la comprensión de las restricciones de implementación, y la evaluación de la compatibilidad entre distintas tecnologías.
+El documento clave fue la especificación técnica de AVATecH, que describe cómo ELAN puede integrar componentes de reconocimiento externos \cite{auer2014avatech}. Esta especificación explica cómo un reconocedor obtiene información de configuración, accede a los recursos multimedia del archivo EAF, reporta progreso y devuelve fragmentos candidatos para que ELAN los agregue a los niveles de anotación. De esta revisión se concluyó que la integración debía respetar interfaces Java como \textbf{Recognizer2} o \textbf{IncrementalRecognizer}; así, las decisiones tecnológicas respondieron a las necesidades del sistema y no a preferencias de implementación.
 
-El documento central analizado fue la especificación técnica de AVATecH \cite{auer2014avatech}, el protocolo de extensión de ELAN para componentes de reconocimiento externo. Esta especificación, publicada por el Instituto Max Planck de Psicolingüística, define los mecanismos por los que un componente externo puede integrarse en el flujo de anotación de ELAN. Es decir, describe cómo recibe parámetros de configuración del usuario, cómo accede a los archivos multimedia asociados al archivo EAF, cómo comunica progreso durante el procesamiento, y cómo devuelve resultados en forma de segmentos candidatos que ELAN puede insertar directamente en sus capas de anotación. El análisis de esta especificación fue el punto de partida para definir el tipo de integración más adecuado. Concretamente, se identificó que AVATecH espera que el componente externo implemente la interfaz Java \texttt{Recognizer2} o \texttt{IncrementalRecognizer}, lo que descartó alternativas como invocar un script externo mediante línea de comandos o comunicarse mediante archivos intermedios en disco lo que derivó a que la integración debía ocurrir dentro del código Java de ELAN.
+También se revisó la documentación de las tecnologías utilizadas en la capa de orquestación. FastAPI permitió organizar los endpoints, el ciclo de inicialización y la documentación automática de la API \cite{fastapi2026features}; Pydantic habilitó modelos de datos ejecutables para validar solicitudes, respuestas y manifiestos \cite{pydantic2026models}. Docker y su SDK para Python permitieron gestionar imágenes, contenedores, redes y montajes desde el middleware \cite{docker2026overview,docker_sdk_python}; y el estilo REST orientó la definición de operaciones HTTP uniformes para consultas, instalaciones, cambios de estado y consulta de resultados \cite{fielding2000rest}. Esta revisión reforzó el vínculo entre la selección tecnológica y los requisitos del sistema.
 
-Adicionalmente, se analizó la documentación de las tecnologías seleccionadas para la capa de orquestación como lo son la documentación de FastAPI \cite{fastapi2026features}, la cual fue revisada con énfasis en el mecanismo de lifespan, que nos permitió ejecutar código de inicialización al momento de arrancar el servidor y código de limpieza al detenerse. También se revisó la gestión de routers, que nos permitió organizar los endpoints en módulos separados sin duplicar su configuración. Además, revisamos la documentación de Pydantic \cite{pydantic2026models} para comprender cómo se realiza la validación automática de modelos de datos, la gestión de valores opcionales con tipos \texttt{Optional} y \texttt{Field}, y el comportamiento ante campos faltantes o tipos incorrectos. Adicional, revisamos las especificaciones de Docker \cite{docker2026overview} prestando especial énfasis en la gestión de redes virtuales, los mecanismos de montaje de volúmenes y directorios del anfitrión, el ciclo de vida de contenedores, y las capacidades del SDK de Python para gestionar el demonio de Docker desde dentro de un contenedor. Por último, se analizó la documentación sobre REST \cite{fielding2000rest} lo cual nos ayudó a decidir la semántica de los métodos HTTP utilizados, como por ejemplo: GET para consultas idempotentes, POST para operaciones con efectos laterales como la instalación de modelos o el inicio de una inferencia, PATCH para modificaciones parciales de un recurso como el cambio de estado de un modelo.
+\subsubsection{Ingeniería inversa del código fuente de ELAN}
 
-\paragraph{Ingeniería inversa del código fuente de ELAN.}
+El segundo enfoque fue la ingeniería inversa del código fuente de ELAN. La versión 7.1 se utilizó como referencia para el análisis y las pruebas de integración. La revisión no buscó rehacer ninguna parte de la herramienta, sino identificar los puntos donde ELAN permite incluir reconocedores externos en el marco AVATecH. Por esa razón, se analizó el paquete \textbf{mpi.eudico.client.annotator.recognizer}, donde se ubican las interfaces, clases de soporte y mecanismos de comunicación asociados con los reconocedores \cite{auer2010elan,auer2014avatech}.
 
-La segunda técnica fue la aplicación de ingeniería inversa sobre el código fuente de ELAN, disponible en su repositorio oficial. El código fuente utlizado para este trabajo fue la última versión disponible en el momento del análsis, es decir, la versión 7.1. El análisis se concentró en el paquete \texttt{mpi.eudico.client.annotator.recognizer}, que contiene las clases responsables de gestionar los reconocedores externos dentro del marco AVATecH.
+El primer elemento identificado fue el contrato que un reconocedor externo debe cumplir. En ELAN, este contrato está representado principalmente por las interfaces \textbf{Recognizer2} e \textbf{IncrementalRecognizer}. Estas interfaces permiten recibir parámetros, iniciar el procesamiento mediante \textbf{start()}, abortar la ejecución y comunicarse con ELAN durante el proceso. La comunicación se realiza mediante \textbf{RecognizerHost}, interfaz que permite informar progreso, reportar errores y enviar segmentaciones al entorno de anotación \cite{auer2014avatech}. Esto dejó claro que el cliente Java debía trabajar dentro del flujo de ELAN y no como una herramienta externa desconectada.
 
-Se identificaron las interfaces \texttt{Recognizer2} e \texttt{IncrementalRecognizer}, que definen el contrato que cualquier reconocedor externo debe implementar. La interfaz \texttt{Recognizer2} incluye métodos para recibir parámetros de configuración desde el panel de ELAN, iniciar el proceso de reconocimiento (\texttt{start()}), interrumpirlo (\texttt{abort()}), y recibir una instancia de \texttt{RecognizerHost} que permite reportar progreso y errores al usuario. Se identificó que el reconocedor recibe los archivos multimedia mediante el método \texttt{setParameterValue()} con claves predefinidas por ELAN, y que los resultados se devuelven mediante el método \texttt{addSegmentation(Segmentation)} del \texttt{RecognizerHost}, donde \texttt{Segmentation} contiene el nombre del tier destino, el archivo multimedia asociado y la lista de \texttt{Segment} con sus tiempos de inicio, fin y etiqueta.
+El segundo elemento fue el mecanismo de entrega de parámetros. La revisión mostró que ELAN no envía una estructura única y cerrada, sino pares clave-valor a través de \textbf{setParameterValue()}; por ello se definieron parámetros explícitos para la ruta del video, el modelo seleccionado, el nivel de anotación destino y las opciones de inferencia. De esta manera, el panel de configuración no depende de valores fijos para enviar información al middleware.
 
-Este análisis permitió determinar con precisión qué formato esperaban los datos de retorno: los tiempos debían expresarse en milisegundos como valores enteros largos (\texttt{long}), y la segmentación debía estar vinculada al nombre exacto del tier destino configurado por el usuario en el panel. También se identificó que el panel del reconocedor se implementa como una clase que se extiende de \texttt{AbstractRecognizerPanel}, lo que definió la estructura base de la clase \texttt{AIOrchestrationRecognizerPanel}. El análisis del cliente HTTP existente en ELAN para otros reconocedores reveló que ELAN emplea \texttt{java.net.http.HttpClient}, disponible a partir de Java 11, y que la versión de la herramienta estudiada no intentaba actualizar automáticamente las conexiones a HTTP/2, aunque esto fue verificado en las pruebas dado que la documentación no lo especificaba explícitamente.
+El tercer elemento fue el retorno de resultados. ELAN no espera una lista genérica de predicciones, sino un objeto \textbf{Segmentation} asociado a un archivo multimedia y a un nivel de anotación, compuesto por objetos \textbf{Segment} con tiempo de inicio, tiempo de fin y etiqueta. Este formato determinó el contrato de respuesta del middleware: cada resultado del backend debía convertirse en un segmento temporal expresado en milisegundos y asociarse al nivel de anotación indicado por el usuario, pues de lo contrario ELAN no puede ubicar la anotación en la línea de tiempo.
 
-Este proceso de ingeniería inversa fue fundamental para tomar la decisión más importante de la fase de diseño "en lugar de implementar un proceso externo invocado desde ELAN mediante un mecanismo de plugin, se optó por implementar las clases directamente dentro del código fuente de ELAN en el paquete \texttt{mpi.eudico.client.annotator.recognizer.ai}". Esta decisión garantiza que el reconocedor se integra sin error con los mecanismos internos de ELAN para gestionar el ciclo de vida de los reconocedores, reportar progreso y manejar la cancelación del usuario.
+También se revisó la construcción del panel gráfico del reconocedor. En ELAN, los paneles de configuración se basan en \textbf{AbstractRecognizerPanel}; su función es organizar controles de entrada antes de iniciar el procesamiento, no ejecutar la inferencia. Por ello se definió \textbf{AIOrchestrationRecognizerPanel} para exponer selección de modelo, validación del video, nivel de anotación destino y parámetros de inferencia. Con esta separación, el panel recopila configuración y el reconocedor ejecuta la comunicación con el middleware y transforma la respuesta en objetos compatibles con ELAN.
 
+Finalmente, se revisó la comunicación HTTP disponible desde Java. Esta revisión orientó la implementación hacia \textbf{java.net.http.HttpClient}, porque permite construir un cliente dentro del mismo proceso de ELAN sin introducir procesos auxiliares. A partir de esta decisión, las clases de integración se ubicaron en el paquete \textbf{mpi.eudico.client.annotator.recognizer.ai}. La ubicación no responde solo a organización del código: permite reutilizar inicialización, configuración, cancelación, reporte de progreso, manejo de errores y entrega de segmentaciones mediante \textbf{RecognizerHost}, manteniendo compatibilidad con el mecanismo de extensión de AVATecH \cite{auer2014avatech}.
 
+\subsubsection{Revisión de trabajos relacionados y modelos existentes}
 
+La tercera técnica fue la revisión de trabajos previos sobre el reconocimiento automático de LSEc y la integración de detectores en ELAN. Esta revisión ayudó a distinguir entre el resultado de un modelo y una anotación que un investigador puede usar: un modelo puede producir una etiqueta, una predicción o una lista de probabilidades, pero ELAN necesita segmentos con inicio, fin y valor textual para agregarlos al nivel de anotación. El trabajo de Guevara sobre el intérprete de frases LSEc muestra que los sistemas de reconocimiento aprenden información visual y generan una clasificación del signo o frase observada \cite{guevara2022lsec_interprete}. Este antecedente confirmó que la salida de un reconocedor requiere una transformación adicional antes de integrarse en la línea de tiempo de ELAN.
 
-\paragraph{Revisión de trabajos relacionados y modelos existentes.}
+Desde una perspectiva técnica, la revisión orientó el contrato de respuesta del middleware. Dado que los backends procesan video, la respuesta debía conservar la información temporal del archivo y no limitarse a un glosario final. Así, se definió \textbf{media\_info} para los metadatos del video y \textbf{predictions} para transportar alternativas de clasificación con sus probabilidades cuando el backend las proporciona. La revisión final queda en manos del investigador: el sistema propone segmentos y etiquetas, pero no convierte las predicciones en anotaciones definitivas sin validación humana.
 
-La tercera técnica fue la revisión de trabajos previos sobre reconocimiento automático de la Lengua de Señas Ecuatoriana \cite{guevara2022lsec_interprete} y sobre sistemas de anotación asistida en corpus de lenguas de señas \cite{auer2010elan}. Esta revisión tuvo dos propósitos: entender el estado del arte en modelos de IA para LSEc y los formatos de entrada y salida que estos modelos manejan, y comprender los antecedentes del problema de integración entre herramientas de anotación y sistemas de procesamiento automático.
+La revisión también ayudó a diferenciar tres ideas que suelen confundirse: reconocimiento, segmentación y anotación. El reconocimiento produce una etiqueta candidata; la segmentación determina el intervalo de tiempo en el que ocurre el evento; y la anotación es la inserción del resultado en ELAN, siempre sujeta a revisión. Esta distinción justificó que el middleware no entregara solo una predicción textual, sino segmentos con tiempos, etiquetas y alternativas cuando existan. Además, mantiene el contrato independiente de la arquitectura de IA y de la implementación interna del backend.
 
-Los trabajos sobre reconocimiento de LSEc revelaron que los modelos disponibles producen resultados como clasificaciones de glosas con probabilidades asociadas, y que el video procesado típicamente tiene una resolución entre 30 y 60 fotogramas por segundo. Esta información orientó el diseño del contrato de respuesta: el campo \texttt{media\_info} debería incluir la tasa de fotogramas y la duración total del video en milisegundos para que ELAN pudiera construir las marcas de tiempo correctamente, y el campo \texttt{predictions} debería incluir las clasificaciones alternativas con sus probabilidades para dar al lingüista opciones de revisión más allá de la predicción de mayor confianza.
+Finalmente, se revisaron antecedentes de integración entre ELAN y detectores automáticos. Auer et al. describen extensiones hacia la anotación semiautomática de audio y video \cite{auer2010elan}. Este antecedente confirmó que la conexión entre ELAN y procesos externos ya existía, pero también evidenció que el presente trabajo necesitaba una capa adicional: no bastaba con invocar al detector; también había que gestionar los modelos instalados, los contenedores, los contratos HTTP, los errores y los resultados temporales. De ahí que el middleware se plantee como un orquestador entre ELAN y los backends de inferencia.
 
-La revisión de los antecedentes de integración con ELAN \cite{auer2010elan} confirmó que la comunidad investigadora había reconocido tempranamente la necesidad de conectar ELAN con procesos externos de análisis automático, pero que los enfoques anteriores estaban diseñados para detectores de señales simples como detectores de voz o de señales de ruido, no para modelos de aprendizaje profundo con requerimientos complejos de entorno. Este antecedente validó la pertinencia de una capa de orquestación nueva en lugar de adaptar los mecanismos heredados.
+\subsection{Técnicas de análisis de la información}
 
-\vspace{1\baselineskip}
+La información recopilada se analizó mediante tres técnicas: descomposición funcional, diseño basado en contratos y validación incremental. Estas técnicas convirtieron la información dispersa en decisiones de diseño verificables. La descomposición determinó qué responsabilidades debía asumir cada componente; el diseño basado en contratos definió cómo se comunicarían componentes escritos en tecnologías distintas; y la validación incremental estableció cómo verificar que cada incremento siguiera funcionando dentro del flujo completo.
 
-\subsubsection{Técnicas de análisis de la información}
+\subsubsection{Descomposición funcional}
 
-La información recolectada mediante las tres técnicas anteriores fue procesada mediante tres técnicas de análisis que orientaron las decisiones de diseño concretas del sistema.
+La descomposición funcional consistió en dividir la integración entre ELAN, el middleware y los backends en responsabilidades pequeñas y verificables. Esta decisión se relaciona con la mantenibilidad del software, ya que un sistema con componentes cohesionados y bajo acoplamiento es más fácil de modificar, probar y extender \cite{iso25010}. En este trabajo, la descomposición se refinó durante el desarrollo; cada fase permitió identificar nuevos puntos de integración, errores de comunicación y necesidades de validación.
 
-\paragraph{Descomposición funcional.}
+En este sentido, se definieron servicios internos del middleware. El \textbf{ModelRegistryService} es responsable de la instalación, validación, registro y consulta de modelos utilizando el registry.json. El \textbf{DockerLifecycleService} es responsable de la creación de imágenes y el inicio inicial durante la instalación, mientras que el \textbf{DockerService} es responsable de ejecutar los contenedores. Esta separación respondió a que instalar un modelo y ejecutar una inferencia son procesos distintos: la instalación crea los artefactos y deja el backend disponible por primera vez, mientras que la inferencia localiza el contenedor activo, envía la solicitud y gestiona el resultado. En ambos casos se emplean contenedores para aislar las aplicaciones y sus dependencias \cite{docker2026overview}.
 
-El problema de integración fue descompuesto en responsabilidades discretas que pudieran implementarse y verificarse de forma independiente. Esta descomposición no fue un ejercicio previo a la implementación, sino un proceso evolutivo que se fue refinando a medida que avanzaban las fases. El criterio rector de la descomposición fue la cohesión funcional: cada módulo debería agrupar operaciones que comparten el mismo propósito y modifican el mismo conjunto de datos, minimizando la necesidad de que un módulo conozca los detalles internos de otro.
+\textbf{JobService} se definió como coordinador de inferencias: recibe la solicitud, consulta el modelo registrado, prepara la ejecución, invoca el backend y devuelve una respuesta compatible con ELAN. \textbf{JobQueue} gestiona la concurrencia mediante una cola FIFO con un límite de inferencias simultáneas, de modo que los recursos de CPU, memoria y GPU no se saturen. Por su parte, \textbf{MetricsService} mantiene contadores de observabilidad: trabajos completados, fallidos, en cola o con tiempo de espera agotado. Con esta separación es posible evaluar el estado del sistema sin mezclar métricas, ejecución y persistencia.
 
-El resultado de este proceso fue la identificación de seis módulos de servicio diferenciados dentro del middleware. El \texttt{ModelRegistryService} concentra toda la lógica de instalación, validación, registro y gestión del estado de los modelos, y es el único módulo que lee y escribe el archivo \texttt{registry.json}. El \texttt{DockerLifecycleService} concentra la lógica de construcción y arranque inicial de contenedores durante la instalación de un modelo, separada del \texttt{DockerService}, que gestiona el ciclo de vida de los contenedores durante la inferencia. El \texttt{JobService} orquesta la secuencia completa de una solicitud de inferencia, coordinando los módulos anteriores sin duplicar su lógica. El \texttt{JobQueue} implementa el control de concurrencia mediante una cola FIFO con límite configurable de slots simultáneos. El \texttt{MetricsService} mantiene los contadores de observabilidad del sistema de forma aislada, sin dependencias sobre los demás módulos más allá de los tipos básicos de datos. Esta separación de responsabilidades permite que cada módulo evolucione de forma independiente y que los fallos queden contenidos dentro de sus fronteras.
+\subsubsection{Diseño dirigido por contratos}
 
-\paragraph{Diseño dirigido por contratos.}
+La segunda técnica se basó en contratos. En este trabajo, un contrato es la definición explícita de los datos que un componente acepta, valida y produce antes de comunicarse con otro componente. Esta decisión fue necesaria porque ELAN está implementado en Java, el middleware en Python y los backends se exponen como servicios HTTP. En una arquitectura de este tipo, asumir estructuras implícitas aumenta el riesgo de errores que son difíciles de diagnosticar. Por lo tanto, se definieron contratos para solicitudes HTTP, respuestas de inferencia y paquetes de instalación usando \textbf{manifest.json}, según el principio REST de interfaces uniformes y mensajes bien definidos \cite{fielding2000rest}.
 
-Cada interfaz entre componentes del sistema fue definida mediante un contrato explícito antes de su implementación. En la práctica, esto significó que los modelos Pydantic que representan las entradas y salidas de los endpoints del middleware, y el esquema del \texttt{manifest.json} que debe incluir cada paquete de modelo, fueron diseñados y documentados antes de escribir la lógica de negocio correspondiente.
+En el middleware, los contratos se implementaron utilizando modelos Pydantic junto con FastAPI. Esta combinación permitió la validación de cuerpos de solicitud antes de ejecutar la lógica de negocio. Si el cliente Java envía un campo faltante, un tipo incorrecto o una estructura inválida, entonces el middleware puede enviar un error estructurado en lugar de pasar por la falla interna. Por tanto, los contratos no quedaron solo como documentación: se convirtieron en una parte ejecutable del sistema \cite{pydantic2026models,fastapi2026features}.
 
-Esta práctica tiene consecuencias directas sobre la calidad del sistema. Cuando el contrato de un endpoint está definido como un modelo Pydantic, la validación de entrada ocurre automáticamente antes de que se ejecute cualquier lógica: si un cliente envía una solicitud con un campo obligatorio faltante o un tipo incorrecto, el middleware responde con un mensaje de error estructurado que identifica exactamente el problema sin necesidad de código adicional de validación. Esto fue verificado en la práctica cuando el cliente Java de ELAN fue desarrollado en la Fase 5: varios errores de serialización del payload de solicitud fueron detectados inmediatamente por la validación Pydantic y corregidos durante el desarrollo, antes de que pudieran manifestarse como comportamientos incorrectos difíciles de diagnosticar.
+El diseño por contratos también se aplicó al paquete de cada modelo. El archivo \textbf{manifest.json} describe identificador, versión, artefactos, forma de construcción del backend Docker y endpoints de inferencia. Validarlo de forma temprana permite detectar paquetes incompletos antes de construir o iniciar un contenedor, lo que resulta preferible a descubrir el problema durante una inferencia, cuando el modelo ya figura como registrado y el usuario espera que esté disponible.
 
-El diseño por contratos también se aplicó a la interfaz entre el middleware y los backends de modelo. El \texttt{manifest.json} de cada paquete de modelo es el contrato de instalación: si un campo requerido está ausente o tiene un valor inválido, la instalación falla con un mensaje descriptivo antes de intentar construir la imagen Docker. Esto evita una clase de errores especialmente difíciles de depurar: los que solo se manifiestan durante la inferencia después de que el modelo ya está instalado y el contenedor está corriendo.
+\subsubsection{Validación incremental mediante pruebas funcionales}
 
-\paragraph{Validación incremental mediante pruebas funcionales.}
+La tercera técnica fue la validación mediante pruebas funcionales. Cada fase produjo un incremento verificable: API base, registro de modelos, gestión de contenedores, cola de inferencia, integración con ELAN y recuperación ante fallos. Se eligió este tipo de validación porque el sistema puede fallar por causas muy distintas entre sí: errores de contrato HTTP, rutas de video inválidas, contenedores detenidos, tiempos de espera del backend o incompatibilidades entre la respuesta del middleware y el formato esperado por ELAN.
 
-Al final de cada fase de implementación, el comportamiento del incremento producido fue verificado mediante pruebas funcionales directas sobre las interfaces públicas del sistema. Para los endpoints del middleware, se empleó Postman como cliente HTTP, enviando solicitudes con distintas combinaciones de parámetros válidos e inválidos y verificando que las respuestas correspondieran al contrato definido. Para la integración con ELAN, se verificó que las anotaciones resultantes aparecieran correctamente en el tier configurado del archivo EAF con los tiempos de inicio y fin correctos.
+Las pruebas se realizaron sobre las interfaces públicas. En el middleware se enviaron solicitudes HTTP válidas e inválidas y las respuestas se compararon con los contratos definidos; en ELAN se comprobó que los segmentos generados aparecieran en el nivel de anotación configurado, con tiempos de inicio y fin consistentes con la respuesta del backend. De este modo se validó el flujo completo: cliente Java, API REST, servicios internos, backend en contenedor y retorno de segmentaciones a ELAN. Además, cualquier escenario puede repetirse siempre que se conserven la solicitud, el paquete y las condiciones de ejecución.
 
-La validación incremental cumple una función adicional más allá de detectar defectos: establece evidencia reproducible del comportamiento correcto del sistema en cada etapa. Un evaluador externo puede reproducir los escenarios de prueba ejecutando los mismos comandos o solicitudes documentados y verificar que el sistema produce los mismos resultados. Esta reproducibilidad es especialmente valiosa en un proyecto de tesis, donde la validación del trabajo debe ser evaluable por terceros.
+En conjunto, las tres técnicas llevaron de información técnica dispersa a una arquitectura verificable: la descomposición funcional organizó las responsabilidades, el diseño por contratos definió interfaces comprobables y la validación incremental confirmó que esas decisiones funcionaban en el sistema completo.
 
-Las tres técnicas de análisis descritas están en relación de complementariedad. La descomposición funcional produce los módulos y sus responsabilidades. El diseño por contratos define las interfaces entre esos módulos. La validación incremental verifica que las interfaces funcionan correctamente en el contexto del sistema completo. Este ciclo de descomponer, definir y verificar se repitió en cada fase del desarrollo, produciendo un sistema cuya arquitectura es el resultado de decisiones explícitas y verificadas, no de convenciones implícitas o accidentes de implementación.
+\subsection{Herramientas y stack tecnológico}
 
-\vspace{1\baselineskip}
+La Tabla~\ref{tab:stack_tecnologico} resume las herramientas utilizadas y las versiones establecidas como base durante el desarrollo. Estas versiones no son la única combinación posible, pero sí el entorno probado para evitar incompatibilidades entre el cliente Java de ELAN, el middleware, Docker y el backend de inferencia. La selección tecnológica tuvo en cuenta los siguientes puntos: comunicación explícita entre componentes, validación de contratos y aislamiento de dependencias a través de contenedores.
 
-\subsubsection{Herramientas y stack tecnológico}
-
-El Cuadro \ref{tab:stack_tecnologico} resume el stack tecnológico empleado en el desarrollo del sistema. Las decisiones de selección tecnológica no fueron arbitrarias: cada herramienta fue elegida por razones concretas relacionadas con los requisitos del sistema y la compatibilidad con el ecosistema de destino.
-
-\begin{table}[h]
+\begin{table}[H]
 \centering
 \caption{Stack tecnológico del sistema desarrollado}
 \label{tab:stack_tecnologico}
-\begin{tabular}{|l|l|l|}
-\hline
-\textbf{Componente} & \textbf{Tecnología} & \textbf{Versión mínima} \\
-\hline
-Lenguaje del middleware & Python & 3.11 \\
-Framework API & FastAPI & 0.115 \\
-Validación de esquemas & Pydantic & 2.x \\
-Servidor ASGI & Uvicorn & 0.32 \\
-Contenerización & Docker + Docker Compose & 25.x \\
-SDK Docker para Python & docker-py & 7.x \\
-Persistencia local & Archivo JSON (bind mount) & — \\
-Lenguaje del cliente ELAN & Java & 11 \\
-Comunicación cliente-middleware & HTTP/1.1 + JSON & — \\
-Comunicación middleware-backend & HTTP interno (red Docker) & — \\
-\hline
+\footnotesize
+\renewcommand{\arraystretch}{1.18}
+\setlength{\tabcolsep}{5pt}
+
+\begin{tabular}{
+    >{\raggedright\arraybackslash}p{3.1cm}
+    >{\raggedright\arraybackslash}p{3.4cm}
+    >{\raggedright\arraybackslash}p{6.2cm}
+}
+\toprule
+\textbf{Componente} & \textbf{Tecnología y versión} & \textbf{Razón principal de selección} \\
+\midrule
+
+Middleware &
+Python 3.11 &
+Compatibilidad con bibliotecas de inteligencia artificial y mejoras de rendimiento del intérprete. \\
+
+Framework API &
+FastAPI 0.115 &
+Definición de endpoints REST, validación integrada y documentación OpenAPI. \\
+
+Validación de datos &
+Pydantic 2.x &
+Modelos de datos ejecutables para validar solicitudes, respuestas y manifiestos. \\
+
+Servidor ASGI &
+Uvicorn 0.32 &
+Ejecución de la aplicación FastAPI sobre el estándar ASGI. \\
+
+Contenerización &
+Docker 25.x y Docker Compose &
+Aislamiento de modelos, dependencias y redes de ejecución. \\
+
+SDK Docker &
+Docker SDK for Python 7.x &
+Control programático de imágenes y contenedores desde el middleware. \\
+
+Persistencia local &
+JSON sobre bind mounts &
+Registro simple y auditable de modelos en un entorno local de usuario único. \\
+
+Cliente ELAN &
+Java 11 &
+Disponibilidad del paquete \texttt{java.net.http} para comunicación HTTP desde ELAN. \\
+
+Cliente--middleware &
+HTTP/1.1 + JSON &
+Interfaz simple entre el cliente Java y el middleware REST. \\
+
+Middleware--backend &
+HTTP interno en red Docker &
+Comunicación aislada entre contenedores sin exponer todos los servicios al anfitrión. \\
+
+\bottomrule
 \end{tabular}
 \end{table}
 
-La selección de Python 3.11 como lenguaje del middleware responde a la necesidad de compatibilidad con el ecosistema de IA: prácticamente todos los frameworks de aprendizaje profundo —PyTorch, TensorFlow, MediaPipe— tienen Python como lenguaje primario, y los modelos existentes de reconocimiento de LSEc fueron desarrollados en Python. Usar el mismo lenguaje en el middleware garantiza que cualquier biblioteca de preprocesamiento o postprocesamiento desarrollada para los modelos puede integrarse directamente en el middleware sin capas de traducción. Python 3.11 específicamente fue seleccionado por sus mejoras de rendimiento respecto a versiones anteriores y por ser la versión mínima requerida por varias dependencias del ecosistema de IA en el momento del desarrollo.
+Python 3.11 fue seleccionado para implementar el middleware porque permite construir servicios de integración compatibles con el ecosistema utilizado por muchos backends de inferencia. En este proyecto, Python no se usó para entrenar modelos, sino para implementar la API, validar datos, coordinar jobs, invocar servicios externos e interpretar respuestas. La versión 3.11 se fijó como línea base por sus mejoras de rendimiento y por ofrecer una plataforma estable para bibliotecas modernas sin depender de versiones experimentales \cite{python311docs}.
 
-FastAPI fue seleccionado sobre alternativas como Flask o Django REST Framework por tres razones. Primero, su integración nativa con Pydantic convierte las clases de modelo Python en contratos HTTP validados automáticamente, sin código adicional. Segundo, su soporte para el tipo \texttt{UploadFile} permite recibir archivos ZIP mediante \texttt{multipart/form-data} con una sola línea de código, sin gestión manual de buffers. Tercero, genera documentación OpenAPI interactiva de forma automática a partir de los modelos Pydantic, lo que facilita la verificación de contratos durante el desarrollo.
+FastAPI fue elegido para implementar la API REST porque permite declarar endpoints HTTP usando tipos de Python y modelos Pydantic. Esto fue importante porque el cliente Java envía solicitudes JSON y el middleware debe rechazar de forma controlada cualquier estructura incompleta o inválida. Además, FastAPI genera documentación OpenAPI y soporta carga de archivos mediante \textbf{UploadFile}, lo que facilitó la instalación de paquetes ZIP de modelos \cite{fastapi2026features}.
 
-Docker fue elegido como mecanismo de contenerización por su disponibilidad multiplataforma —Windows, macOS, Linux— y por su capacidad de gestionar la red compartida entre contenedores sin exponer puertos al sistema anfitrión. El SDK de Python para Docker (\texttt{docker-py}) permite al middleware controlar el ciclo de vida de los contenedores —crear, iniciar, detener, inspeccionar— directamente desde Python, sin necesidad de invocar el cliente de línea de comandos mediante subprocesos, lo que simplifica el manejo de errores y la gestión de recursos.
+Se eligió Pydantic 2.x para representar solicitudes, respuestas y manifiestos como modelos de datos. Con esta decisión, errores de tipo, campos faltantes o estructuras inválidas se detectan antes de ejecutar la lógica de negocio \cite{pydantic2026models}. Por ello, Pydantic se aplicó tanto a endpoints del middleware como al archivo \textbf{manifest.json}, evitando que errores de empaquetado se descubran recién durante una inferencia.
 
-Java 11 fue la versión seleccionada para el cliente ELAN porque es la versión mínima con soporte para \texttt{java.net.http.HttpClient}, el cliente HTTP moderno de Java que reemplaza \texttt{HttpURLConnection}. Este cliente soporta de forma nativa solicitudes \texttt{multipart/form-data} y permite configurar la versión del protocolo HTTP, lo que fue necesario para forzar HTTP/1.1 y evitar conflictos con Uvicorn, que no soporta HTTP/2 en su configuración por defecto.
+Docker y Docker Compose se seleccionaron para aislar los backends de inferencia junto con sus dependencias, ya que mezclarlas con ELAN o con el entorno base del middleware incrementaría el riesgo de incompatibilidades. Docker empaqueta servicios en contenedores y los conecta mediante redes administradas \cite{docker2026overview}. Sobre esa base, el Docker SDK for Python se incorporó para construir imágenes, crear contenedores, iniciar servicios, inspeccionar estados y detener backends desde el propio middleware, sin depender de comandos manuales de consola \cite{docker_sdk_python}.
 
-La persistencia de datos del middleware se implementó mediante archivos JSON sobre bind mounts en lugar de una base de datos relacional o un sistema de almacenamiento más sofisticado. Esta decisión responde a que el caso de uso del sistema es de usuario único: un investigador ejecuta el middleware en su propia máquina y no necesita manejo de transacciones concurrentes, búsquedas indexadas ni replicación de datos. Un archivo JSON es suficiente para almacenar el registro de modelos instalados, es legible directamente por el investigador sin herramientas especiales, y no añade dependencias externas al sistema. La alternativa de un volumen Docker con nombre fue descartada en favor del bind mount por la razón de durabilidad explicada en la sección de despliegue: los archivos en el bind mount persisten en el disco del anfitrión independientemente de cualquier operación sobre los recursos Docker.
+Se eligió Java 11 para el cliente integrado en ELAN porque incorpora \textbf{java.net.http}, paquete que proporciona \textbf{HttpClient}, \textbf{HttpRequest} y \textbf{HttpResponse} como API estándar para comunicación HTTP \cite{java11_httpclient}. Esta decisión evitó agregar librerías externas al módulo de integración. Además, \textbf{HttpClient} permitió configurar HTTP/1.1 para mantener compatibilidad con el servidor del middleware. Para instalar modelos desde ELAN se construyó manualmente el cuerpo \textbf{multipart/form-data}, manteniendo un cliente Java ligero y controlado.
 
-Uvicorn fue seleccionado como servidor ASGI por ser el servidor de referencia para aplicaciones FastAPI y por su capacidad de gestionar un pool de hilos para manejar solicitudes síncronas. Esta última característica es relevante porque el endpoint \texttt{POST /api/v1/jobs/segment-video} es inherentemente síncrono: el hilo HTTP que lo atiende puede quedar bloqueado en \texttt{JobQueue.submit()} esperando un slot de concurrencia, mientras Uvicorn sigue procesando otras solicitudes (como \texttt{GET /health} o consultas de métricas) en otros hilos del pool. Este modelo de concurrencia híbrido —asyncio para las solicitudes HTTP de coordinación y hilos del pool para las inferencias bloqueantes— permite que el sistema mantenga responsividad durante inferencias largas sin modificar la interfaz síncrona que ELAN espera.
+La persistencia local se resolvió mediante archivos JSON almacenados en bind mounts. Esta decisión responde a un escenario local de usuario único, donde un investigador ejecuta ELAN, el middleware y los backends en su estación de trabajo. En ese contexto, una base de datos relacional exigiría una configuración innecesaria solo para registrar modelos, verificar su estado y recuperar manifiestos. El archivo \textbf{registry.json} funciona como un registro auditable y, gracias a los bind mounts, los datos permanecen en el sistema de archivos del anfitrión aunque los contenedores se recreen \cite{docker2026overview}.
 
+Uvicorn se eligió como servidor ASGI para ejecutar la aplicación FastAPI. Su papel no es realizar inferencias, sino mantener accesible la API del middleware: mientras una inferencia prolongada ocupa un hilo de trabajo, los endpoints de salud, gestión y métricas siguen respondiendo. Este comportamiento complementa a \textbf{JobQueue}, que limita las inferencias simultáneas sin bloquear el resto del servicio. La versión 0.32 se fijó por compatibilidad con FastAPI y con la configuración utilizada durante el desarrollo \cite{uvicorn_docs}.
 \vspace{1\baselineskip}
 
-\subsubsection{Proceso de desarrollo: fases iterativas}
+\subsection{Proceso de desarrollo: fases iterativas}
 
-El desarrollo del sistema se organizó en una fase inicial de análisis y diseño seguida de seis fases de implementación. Cada fase añade un conjunto de funcionalidades al sistema con criterios de verificación propios.
+El desarrollo se estructuró en una etapa inicial de análisis y diseño seguida de seis fases de implementación, lo que permitió avanzar desde la definición de la arquitectura hasta la validación del sistema completo sin perder de vista el flujo real de trabajo en ELAN. Cada fase dejó un producto operativo: la API base, la instalación de modelos, el ejecutor Docker, la cola de trabajos con métricas, la integración gráfica y las pruebas de extremo a extremo.
 
-\paragraph{Fase de análisis y diseño.}
+La lógica del avance fue incremental: primero se consiguió que ELAN, el middleware y los backends de inferencia se comunicaran; luego se añadieron los componentes que hacen esa comunicación estable, observable y recuperable ante fallos. El criterio de progreso no era que el código compilara, sino que cada parte cumpliera su porción del contrato dentro de la arquitectura general.
 
-Antes de comenzar la implementación, se realizó un análisis de la especificación AVATecH y del código fuente de ELAN que permitió tomar la decisión arquitectónica más importante del proyecto: la forma de integración entre ELAN y el middleware. Las alternativas consideradas fueron tres. La primera alternativa consistía en desarrollar un proceso externo independiente que ELAN invocara mediante línea de comandos al iniciar un reconocimiento, a través de los mecanismos de extensión basados en scripts que algunos reconocedores de ELAN utilizan. Esta alternativa fue descartada porque los mecanismos basados en scripts no permiten reportar progreso en tiempo real al usuario ni recibir señales de cancelación, y porque el proceso de integrar la respuesta en el formato de segmentación de ELAN requería lógica adicional de parsing que añadía complejidad sin beneficio claro.
+\subsubsection{Análisis y diseño}
 
-La segunda alternativa era implementar el backend completo de IA dentro del proceso de ELAN, integrando Python mediante la API de JNI (Java Native Interface). Esta alternativa fue descartada porque requería que el investigador tuviera un entorno Python configurado en su máquina con todas las dependencias del modelo, lo que elimina la ventaja de la contenerización y convierte la gestión de dependencias en responsabilidad del usuario.
+Antes de implementar el sistema se revisaron la especificación de AVATecH, el código fuente de ELAN y las restricciones operativas de los backends de IA. Esta revisión ayudó a delimitar qué parte del flujo debía quedar dentro de ELAN y qué parte correspondía a un servicio externo. AVATecH establece que los reconocedores externos deben implementarse a través de interfaces esperadas por ELAN y devolver resultados convertibles en anotaciones temporales \cite{auer2014avatech}; por lo tanto, la solución debía cubrir la configuración, el reporte de progreso, la cancelación y el retorno de segmentos.
 
-La tercera alternativa, finalmente adoptada, fue implementar un reconocedor Java dentro del código fuente de ELAN que actuara como cliente HTTP de un servicio local externo —el middleware— que gestionara los modelos contenerizados. Esta alternativa es la más limpia porque respeta completamente la separación de responsabilidades: ELAN sigue siendo una herramienta de anotación que delega el procesamiento a un servicio especializado, el middleware absorbe toda la complejidad de gestión de modelos y contenedores, y cada componente puede desarrollarse y actualizarse de forma independiente.
+Se analizaron tres alternativas de integración. La primera fue ejecutar procesos externos desde ELAN mediante línea de comandos o archivos intermedios. Aunque mantenía el modelo fuera de ELAN, complicaba el reporte de progreso, la cancelación y la conversión de resultados a estructuras compatibles con el anotador. La segunda fue integrar el backend de IA dentro del proceso de ELAN mediante JNI, pero esta opción introducía una frontera compleja entre Java, Python, bibliotecas nativas y dependencias del modelo \cite{oracle_jni}. Además, reducía la portabilidad, porque el usuario tendría que mantener un entorno compatible con esas dependencias.
 
-Como resultado de este análisis, se definió la arquitectura general del sistema: ELAN como cliente HTTP, el middleware como orquestador local, y los modelos de IA como backends contenerizados accesibles vía red Docker interna. Esta arquitectura fue representada en un diagrama de componentes que sirvió como referencia compartida para las fases de implementación posteriores.
+La alternativa adoptada fue implementar en ELAN un reconocedor Java que actúe como cliente HTTP de un servicio local. Con esta decisión, ELAN conserva su flujo de configuración e inserción de anotaciones, mientras que el middleware coordina los backends de IA fuera del proceso principal. La comunicación HTTP/1.1 con JSON se eligió por ser explícita, verificable y desacoplada, de acuerdo con el estilo REST \cite{fielding2000rest}. Para el cliente Java se usó \textbf{java.net.http.HttpClient}, disponible desde Java 11, evitando añadir librerías externas al código de ELAN \cite{java11_httpclient}.
 
-\begin{figure}[h]
-\centering
-\fbox{\parbox{0.85\textwidth}{\centering\vspace{2cm}
-\textit{Figura: Diagrama de arquitectura general del sistema}\\[4pt]
-ELAN (cliente Java) $\leftrightarrow$ Middleware (FastAPI, Python) $\leftrightarrow$ Contenedores Docker (modelos de IA)\\[4pt]
-Red compartida: \texttt{elan-ai-shared}
-\vspace{2cm}}}
-\caption{Arquitectura general del sistema de orquestación}
-\label{fig:arquitectura_general}
+A partir de esta decisión se definió una arquitectura de tres capas: ELAN como cliente de anotación, el middleware como orquestador local y los backends como servicios contenerizados. Docker permitió empaquetar cada backend con sus dependencias y ejecutarlo de forma aislada del sistema anfitrión \cite{docker2026overview}. Así, el investigador puede seguir trabajando en ELAN, mientras el middleware instala modelos, verifica disponibilidad, crea contenedores y envía solicitudes de inferencia.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.85\textwidth]{Diagramas/diagrama_arquitectura_general.png}
+    \caption{Arquitectura general del sistema de orquestación}
+    \label{fig:arquitectura_general}
 \end{figure}
 
-En la fase de análisis también se definieron los contratos de interfaz principales. El esquema del \texttt{manifest.json} que debe incluir cada paquete de modelo fue diseñado para capturar toda la información necesaria para la instalación, el despliegue y la ejecución, organizada en secciones temáticas: metadatos del modelo (\texttt{model\_id}, \texttt{name}, \texttt{version}, \texttt{task}), configuración del runtime (\texttt{runtime}), lista de artefactos incluidos (\texttt{artifacts}), configuración del backend Docker (\texttt{backend\_config}, \texttt{container}), contratos de entrada y salida del backend (\texttt{input\_contract}, \texttt{output\_contract}), y configuración de la interfaz de usuario de ELAN (\texttt{ui}). Definir este esquema antes de la implementación garantizó que el middleware pudiera desarrollarse con una comprensión clara de qué información estaría disponible en tiempo de instalación y en tiempo de inferencia.
+La Figura~\ref{fig:arquitectura_general} resume esta separación de responsabilidades. ELAN no ejecuta directamente el pipeline de IA; envía una solicitud al middleware. El middleware valida la petición, localiza el modelo, coordina Docker y devuelve segmentos temporales que ELAN puede insertar en el nivel de anotación configurado.
 
-\paragraph{Fase 1 — Base del middleware.}
+En esta etapa también se definió el contrato de instalación mediante \textbf{manifest.json}. Este archivo acompaña a cada paquete de modelo y declara identidad, versión, tarea, artefactos, runtime, configuración del contenedor, endpoints del backend y opciones visibles en ELAN. Definir el esquema antes de implementar la instalación permitió validar los paquetes de forma temprana y devolver errores estructurados, aprovechando las capacidades de Pydantic y FastAPI \cite{pydantic2026models,fastapi2026features}.
 
-La primera fase estableció la estructura base del middleware como un servicio HTTP local ejecutado dentro de un contenedor Docker. El objetivo de esta fase fue tener un servicio funcional, desplegable mediante Docker Compose, que respondiera correctamente a las solicitudes de verificación de salud, antes de implementar ninguna lógica de modelos o inferencia.
+\subsubsection{Fase 1 — Base del middleware}
 
-La estructura de módulos del middleware fue diseñada desde el inicio con separación de capas: la capa \texttt{api/} contiene únicamente los routers FastAPI que reciben y validan las solicitudes HTTP y delegan a la capa de servicios; la capa \texttt{services/} contiene la lógica de negocio; la capa \texttt{runners/} contiene los mecanismos de ejecución; la capa \texttt{schemas/} contiene los modelos Pydantic; y la capa \texttt{core/} contiene la configuración transversal. Esta separación desde la primera fase evita el acoplamiento progresivo que ocurre cuando la lógica de negocio y los handlers HTTP crecen mezclados en los mismos archivos.
+El primer paso fue construir una base del middleware simple, ejecutable y verificable. Antes de abordar la gestión de modelos o la inferencia, se implementó un servicio HTTP local capaz de iniciarse en Docker, cargar su configuración, exponer un endpoint de salud y generar registros de diagnóstico. Comenzar por esta base redujo el riesgo inicial, pues comprobó que Python, FastAPI, Uvicorn, Docker y la red de despliegue funcionaban en conjunto \cite{fastapi2026features,docker2026overview}.
 
-El módulo de configuración (\texttt{app/core/config.py}) implementa la lectura de variables de entorno mediante la clase \texttt{Settings} de Pydantic. Todas las opciones configurables del middleware se definen como campos de esta clase con sus valores por defecto, sus tipos y sus descripciones. Esta centralización garantiza que no existen variables de entorno leídas de forma dispersa en el código: cualquier ajuste de configuración pasa necesariamente por \texttt{Settings}, lo que hace predecible y auditable el comportamiento ante distintas configuraciones de despliegue.
+Desde el principio, las responsabilidades internas se separaron. La capa \textbf{api/} contiene los routers HTTP; \textbf{services/} concentra la lógica de negocio; \textbf{runners/} agrupa los mecanismos de ejecución; \textbf{schemas/} define los contratos Pydantic; y \textbf{core/} centraliza configuración y logging. Esta organización evita que los handlers acumulen lógica de orquestación y facilita la modificación de una parte del sistema sin afectar a todo el middleware.
 
-El sistema de logging estructurado (\texttt{app/core/logging\_config.py}) fue configurado para producir mensajes con cuatro campos: nivel de severidad, marca de tiempo, módulo de origen y mensaje descriptivo. El formato adoptado es \texttt{YYYY-MM-DD HH:MM:SS,mmm | NIVEL | módulo | mensaje}, que permite filtrar por módulo y por nivel, lo que facilita el diagnóstico durante las pruebas funcionales. El nivel de logging es configurable mediante la variable de entorno \texttt{MIDDLEWARE\_LOG\_LEVEL}, con valor por defecto \texttt{INFO}.
+La configuración se centralizó en \textbf{app/core/config.py} mediante una clase \textbf{Settings} basada en Pydantic. Las rutas, los límites de concurrencia, los tiempos de espera, el nivel de registro y los parámetros del contenedor se declaran allí. El registro estructurado se implementó en \textbf{app/core/logging\_config.py}, con mensajes que incluyen severidad, marca de tiempo, módulo y descripción. La verbosidad se controla con \textbf{MIDDLEWARE\_LOG\_LEVEL}, siguiendo la práctica de configurar el comportamiento desde el entorno \cite{python_logging}.
 
-El manejo global de errores fue implementado en \texttt{main.py} mediante los mecanismos de manejadores de excepciones de FastAPI. Se definieron manejadores específicos para cada clase de excepción de dominio del sistema: \texttt{ModelRegistryError}, \texttt{DockerServiceError} y \texttt{RunnerSelectionError}. Cada manejador transforma la excepción en una respuesta HTTP con el esquema de error unificado que incluye un código de error semántico y un mensaje descriptivo. El esquema de error unificado tiene la siguiente forma:
+El manejo global de errores se definió en \textbf{main.py} a través de manejadores de excepciones de FastAPI para errores de registro, Docker y selección de runners. Todos los errores se convierten en una respuesta uniforme con código semántico y detalle legible.
 
-\begin{verbatim}
+\begin{center}
+\begin{minipage}{0.85\textwidth}
+\hrule
+\vspace{0.12cm}
+\small
+\begin{Verbatim}[baselinestretch=0.82]
 {"error_code": "CODIGO_DESCRIPTIVO", "detail": "Mensaje legible."}
-\end{verbatim}
+\end{Verbatim}
+\vspace{0.05cm}
+\hrule
 
-La elección de un esquema unificado en lugar de mensajes de error ad hoc tiene una consecuencia práctica importante: el cliente Java en ELAN puede extraer el campo \texttt{detail} de cualquier respuesta de error del middleware con el mismo código de parsing, independientemente del tipo de error. Esto fue explotado en la Fase 5 cuando se implementó el método \texttt{buildErrorMessage()} del cliente Java.
+\captionof{listing}{Formato uniforme de respuesta de error del middleware}
+\label{lst:error_response}
+\end{minipage}
+\end{center}
 
-La contenerización del middleware fue configurada mediante un \texttt{Dockerfile} basado en la imagen \texttt{python:3.11-slim} y el archivo \texttt{docker-compose.yml} que declara el servicio, sus bind mounts, sus variables de entorno y la red compartida. La imagen base \texttt{python:3.11-slim} fue seleccionada sobre la imagen completa de Python por su menor tamaño (aproximadamente 150 MB frente a 1 GB), lo que reduce los tiempos de construcción y descarga. La red Docker \texttt{elan-ai-shared} fue declarada con nombre fijo mediante la directiva \texttt{name: elan-ai-shared} en la sección \texttt{networks} del Compose, lo que garantiza que los contenedores de modelo instalados posteriormente pueden unirse a ella usando siempre el mismo nombre, independientemente del nombre del proyecto Docker Compose activo.
+Este formato fue importante para la integración con ELAN, porque el cliente Java puede leer siempre el campo \textbf{detail}, sin importar si el fallo proviene del registro de modelos, Docker o el backend de inferencia.
 
-El mecanismo de inicio del middleware emplea el contexto de ciclo de vida (\textit{lifespan}) de FastAPI, implementado mediante un generador asíncrono decorado con \texttt{@asynccontextmanager}. El código que precede al \texttt{yield} se ejecuta al arrancar el servidor, antes de aceptar solicitudes, y el código que sigue se ejecuta al detenerse. En el lifespan de inicio, el middleware ejecuta dos operaciones: configura el sistema de logging y escanea el directorio de bootstrap manifests para re-registrar los modelos instalados en sesiones anteriores. Esta secuencia garantiza que el registry está completo antes de que la primera solicitud sea procesada. La configuración del logging ocurre antes del escaneo de manifests para que cualquier problema durante el re-registro quede registrado correctamente en los logs.
+La configuración del contenedor del middleware se definió con un \textbf{Dockerfile} basado en \textbf{python:3.11-slim} y un \textbf{docker-compose.yml} con servicio, bind mounts, variables de entorno y red compartida. La red \textbf{elan-ai-shared} se declaró con nombre fijo para que los contenedores de modelos instalados posteriormente se unan al mismo espacio de comunicación \cite{python311docs,docker2026overview}.
 
-El criterio de verificación de esta fase fue la respuesta correcta al endpoint \texttt{GET /health} tras ejecutar \texttt{docker compose up --build -d}:
+Durante el arranque, antes de aceptar solicitudes, el middleware configura los logs y escanea \textbf{data/bootstrap\_manifests/} para recuperar modelos instalados en sesiones previas. El criterio de verificación fue levantar el servicio con \textbf{docker compose up --build -d} y confirmar la respuesta de \textbf{GET \symbol{47}health}:
 
-\begin{verbatim}
+\begin{center}
+\begin{minipage}{0.95\textwidth}
+\hrule
+\vspace{0.12cm}
+\small
+\begin{Verbatim}[baselinestretch=0.82]
 {"status": "ok", "service": "elan-ai-orchestrator", "version": "0.1.0"}
-\end{verbatim}
+\end{Verbatim}
+\vspace{0.05cm}
+\hrule
 
-La verificación incluye también la comprobación de que los logs del contenedor muestran el mensaje de inicio de Uvicorn sin errores de importación o configuración, y que el número de hilos del pool de Uvicorn es suficiente para atender solicitudes de inferencia concurrentes con solicitudes de gestión sin bloqueo mutuo. Este último punto fue verificado experimentalmente enviando una solicitud de inferencia larga simultáneamente con una solicitud de health check, confirmando que ambas se procesan en paralelo.
+\captionof{listing}{Respuesta esperada del endpoint de salud del middleware}
+\label{lst:health_response}
+\end{minipage}
+\end{center}
 
-\paragraph{Fase 2 — Registro de modelos e instalación automática.}
+Además de la respuesta HTTP, se verificó que Uvicorn iniciara sin errores y que el endpoint de salud siguiera respondiendo mientras una inferencia larga estaba en ejecución. Con ello se confirmó que la base del middleware era suficiente para el caso de uso local previsto \cite{uvicorn_docs}.
 
-La segunda fase implementó la funcionalidad central de gestión de modelos: la instalación de modelos desde paquetes ZIP, su validación en múltiples niveles, la construcción automática de la imagen Docker del backend y el arranque del contenedor. Esta fase es arquitectónicamente la más compleja de las seis porque involucra la coordinación de múltiples subsistemas y debe garantizar consistencia ante cualquier tipo de fallo.
+\subsubsection{Fase 2 — Registro de modelos e instalación automática}
 
-El flujo de instalación consta de once pasos secuenciales con un mecanismo de rollback que se activa si cualquier paso del 8 al 11 falla. Los pasos son los siguientes: primero, recibir y guardar el archivo ZIP en una ubicación temporal; segundo, abrir el ZIP y detectar si tiene un directorio raíz único (el middleware normaliza automáticamente este caso para que el \texttt{manifest.json} siempre sea accesible en la raíz lógica del paquete); tercero, leer y parsear el \texttt{manifest.json}; cuarto, validar el manifest contra el schema Pydantic \texttt{ModelManifest}; quinto, verificar que todos los artefactos declarados existen dentro del ZIP y que sus rutas son seguras (no contienen secuencias \texttt{../} ni rutas absolutas); sexto, verificar que no existe en el registry una combinación idéntica de \texttt{model\_id} y \texttt{version}; séptimo, extraer el ZIP al directorio de destino en el volumen de modelos; octavo, construir la imagen Docker del backend; noveno, crear e iniciar el contenedor del modelo con los parámetros correctos de red y montaje de volúmenes; décimo, verificar que el contenedor responde al health check con código 200; y undécimo, registrar el modelo en el archivo \texttt{registry.json} y guardar el manifest de bootstrap. Si cualquiera de los pasos octavo a undécimo falla, el sistema elimina el directorio extraído y la imagen Docker construida (si fue construida), devolviendo el sistema al estado previo a la instalación.
+La segunda fase abordó la gestión de modelos. El middleware debía recibir un paquete ZIP, validar su contenido, construir la imagen Docker del backend, crear el contenedor, verificar su disponibilidad y registrar el modelo instalado. Dado que esta fase combina sistema de archivos, validación, Docker y persistencia, se diseñó como un flujo secuencial con puntos de control y recuperación.
 
-El proceso de validación en once pasos que aplica el middleware antes de extraer el ZIP merece especial atención. La validación del campo \texttt{model\_id} incluye la verificación de que solo contiene caracteres alfanuméricos, guiones, puntos y guiones bajos, lo que previene inyecciones en nombres de contenedores o rutas de directorios. La validación de artefactos verifica no solo que los archivos existen en el ZIP, sino también que sus rutas no intentan salir del directorio del paquete, lo que previene la extracción de archivos a ubicaciones inesperadas del sistema de archivos del contenedor. La validación del campo \texttt{task} contra la lista de valores soportados garantiza que el runner puede interpretar correctamente la salida del backend sin comportamiento indefinido.
+El proceso comienza con la recepción del ZIP y la localización del \textbf{manifest.json}. El middleware valida el manifiesto contra el esquema \textbf{ModelManifest}, comprueba que los artefactos declarados existan dentro del paquete, rechaza rutas inseguras y verifica que la combinación de \textbf{model\_id} y \textbf{version} no esté ya instalada. Solo entonces extrae el paquete, construye la imagen Docker, crea el contenedor y ejecuta la comprobación de disponibilidad. Si la construcción, el arranque, esa comprobación o la persistencia fallan, se ejecuta un rollback que elimina los archivos extraídos y la imagen construida, de modo que el sistema regresa a su estado anterior.
 
-El \texttt{manifest.json} es el núcleo del contrato de instalación. Este archivo, que debe estar en la raíz del ZIP, declara el identificador del modelo, su versión, la tarea que resuelve, los artefactos incluidos en el paquete y la configuración del backend Docker. El Cuadro \ref{tab:manifest_campos} describe los campos principales del manifest.
+La validación previa a la extracción actúa como barrera de seguridad y consistencia: el identificador del modelo solo admite caracteres seguros, todos los artefactos declarados deben existir dentro del ZIP, las rutas no pueden contener \textbf{../} ni ser absolutas, y la tarea debe estar entre las soportadas. Estas reglas evitan instalar paquetes incompletos o capaces de escribir fuera del directorio previsto, y se apoyan en la validación temprana de Pydantic y FastAPI \cite{pydantic2026models,fastapi2026features}.
 
-\begin{table}[h]
+El \textbf{manifest.json} es el contrato entre quien empaqueta un modelo y el middleware. La Tabla~\ref{tab:manifest_campos} resume los campos que el orquestador necesita para instalar, ejecutar y presentar un modelo sin codificar esos datos dentro del middleware. El esquema completo del archivo, con los valores admitidos en cada objeto y el manifest real del modelo de referencia, se recoge en el Anexo~A.
+
+\begin{table}[H]
 \centering
 \caption{Campos principales del \texttt{manifest.json}}
 \label{tab:manifest_campos}
-\begin{tabular}{|l|l|p{6.5cm}|}
-\hline
+\small
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{3.1cm}>{\raggedright\arraybackslash}p{2.1cm}>{\raggedright\arraybackslash}p{7.2cm}@{}}
+\toprule
 \textbf{Campo} & \textbf{Tipo} & \textbf{Descripción} \\
-\hline
-\texttt{model\_id} & string & Identificador único del modelo. Solo caracteres \texttt{[A-Za-z0-9\_.−]}. \\
-\texttt{version} & string & Versión semántica del modelo (p.ej. \texttt{1.0.0}). \\
-\texttt{task} & string & Tarea del modelo: \texttt{video\_segmentation} o \texttt{video\_segmentation\_and\_gloss\_classification}. \\
-\texttt{runtime.mode} & string & Único valor soportado: \texttt{docker}. \\
-\texttt{artifacts} & object & Rutas relativas dentro del ZIP de cada artefacto. Todos deben existir. \\
-\texttt{backend\_config} & object & Nombre de imagen, puerto, health path, timeout de arranque al instalar. \\
-\texttt{container} & object & Puerto, health path e infer path usados en cada inferencia. \\
-\texttt{ui} & object & Configuración de la UI de ELAN: tier destino, etiqueta, modo de etiquetado. \\
-\hline
+\midrule
+\texttt{model\_id} & string & Identificador único del modelo. Solo admite caracteres \texttt{[A-Za-z0-9\_.-]}. \\
+\texttt{version} & string & Versión semántica del modelo, por ejemplo \texttt{1.0.0}. \\
+\texttt{task} & string & Tarea del modelo: \texttt{video\_segmentation} o \newline\texttt{video\_segmentation\_and}\newline\texttt{\_gloss\_classification}. \\
+\texttt{runtime.mode} & string & Modo de ejecución. En esta implementación, el único valor soportado es \texttt{docker}. \\
+\texttt{artifacts} & object & Rutas relativas dentro del ZIP para cada artefacto declarado; todos los archivos deben existir. \\
+\texttt{backend\_config} & object & Nombre de imagen, puerto, ruta de comprobación de disponibilidad y timeout de arranque usados durante la instalación. \\
+\texttt{container} & object & Puerto, ruta de comprobación de disponibilidad y ruta de inferencia usados durante cada ejecución. \\
+\texttt{ui} & object & Configuración de la interfaz de ELAN: nivel de anotación destino, etiqueta y modo de etiquetado. \\
+\bottomrule
 \end{tabular}
 \end{table}
 
-La estructura esperada del paquete ZIP define el contrato de empaquetado que cualquier nuevo modelo debe respetar:
+La estructura esperada del ZIP forma parte del mismo contrato. Cualquier backend nuevo debe respetar esta organización para que el middleware ubique el Dockerfile, las dependencias, los pesos, el vocabulario y la configuración del pipeline sin reglas especiales por modelo:
 
-\begin{verbatim}
+\begin{center}
+\begin{minipage}{0.88\textwidth}
+\hrule
+\vspace{0.12cm}
+\small
+\begin{Verbatim}[baselinestretch=0.82]
 mi_modelo.zip
-├── manifest.json                   ← obligatorio, en la raíz
-├── backend/
-│   ├── Dockerfile                  ← imagen Docker del backend
-│   ├── requirements.txt
-│   └── app/
-│       ├── main.py                 ← endpoints /health e /infer
-│       └── ...
-├── weights/                        ← pesos del modelo
-├── vocab/                          ← vocabulario de glosas
-└── config/
-    └── pipeline_config.json        ← configuración del pipeline
-\end{verbatim}
+|-- manifest.json              (obligatorio, en la raiz)
+|-- backend/
+|   |-- Dockerfile             (imagen Docker del backend)
+|   |-- requirements.txt
+|   `-- app/
+|       |-- main.py            (endpoints /health e /infer)
+|       `-- ...
+|-- weights/                   (pesos del modelo)
+|-- vocab/                     (vocabulario de glosas)
+`-- config/
+    `-- pipeline_config.json   (configuracion del pipeline)
+\end{Verbatim}
+\vspace{0.05cm}
+\hrule
 
-Como medida de resiliencia ante pérdida del volumen de datos, se implementó en esta fase el mecanismo de bootstrap manifests. Al instalar un modelo, el middleware guarda una copia del manifest en un directorio separado persistido por bind mount en la ruta del host (\texttt{data/bootstrap\_manifests/}), con el nombre \texttt{<model\_id>\_\_<version>.json}. Al arrancar, el middleware escanea este directorio mediante el método \texttt{\_load\_bootstrap\_manifests()} y re-registra automáticamente los modelos cuyos manifests encuentra, incluso si el archivo \texttt{registry.json} principal fue eliminado por error o por una operación de limpieza del volumen Docker. Esta capacidad de recuperación automática significa que el sistema puede reiniciarse sin pérdida de información sobre los modelos instalados, siempre que el directorio de bind mount esté disponible.
+\captionof{listing}{Estructura esperada del paquete ZIP de un modelo}
+\label{lst:estructura_zip_modelo}
+\end{minipage}
+\end{center}
 
-El nombre del contenedor Docker de cada modelo se genera de forma determinística a partir del identificador y la versión del modelo, sustituyendo cualquier carácter no permitido en nombres de contenedores por guiones:
+Para mejorar la resiliencia se implementaron \textit{bootstrap manifests}. Durante la instalación, el middleware guarda una copia del manifest en \textbf{data/bootstrap\_manifests/} con el nombre \textbf{<model\_id>\_\_<version>.json}. Al iniciar, \textbf{\_bootstrap\_docker\_manifests()} escanea ese directorio y re-registra modelos si \textbf{registry.json} fue eliminado, siempre que el bind mount persistente siga disponible.
 
-\begin{verbatim}
+El nombre del contenedor Docker se genera de forma determinística a partir del identificador y la versión del modelo:
+
+\begin{center}
+\begin{minipage}{0.55\textwidth}
+\hrule
+\vspace{0.12cm}
+\small
+\begin{Verbatim}[baselinestretch=0.82]
 elan-ai-model-{model_id}-{version}
-\end{verbatim}
+\end{Verbatim}
+\vspace{0.05cm}
+\hrule
 
-Con \texttt{model\_id=lsec\_bio\_gloss\_final\_v1} y \texttt{version=1.0.0}, el nombre resultante es \texttt{elan-ai-model-lsec\_bio\_gloss\_final\_v1-1.0.0}. El carácter determinístico de este nombre permite que el middleware localice el contenedor de un modelo sin necesidad de almacenar el identificador del contenedor: en cualquier momento, puede derivar el nombre a partir de los metadatos del modelo.
+\captionof{listing}{Patrón de nombre del contenedor Docker de un modelo}
+\label{lst:nombre_contenedor_modelo}
+\end{minipage}
+\end{center}
 
-La Figura \ref{fig:flujo_instalacion} representa el flujo completo de instalación, incluyendo las ramas de error y rollback.
+Con \textbf{model\_id=lsec\_bio\_gloss\_final\_v1} y \textbf{version=1.0.0}, el nombre generado es \textbf{elan-ai-model-lsec\_bio\_gloss\_final\_v1-1.0.0}. Esta regla evita almacenar un identificador adicional: el middleware puede localizar el contenedor derivando su nombre desde los metadatos. Las operaciones de construcción, creación, inicio e inspección se realizaron con el SDK de Docker para Python \cite{docker_sdk_python}.
+
+La Figura~\ref{fig:flujo_instalacion} muestra el flujo de instalación completo. La ruta principal termina con el modelo registrado; la rama de error representa el rollback cuando falla la construcción, el arranque, la comprobación de disponibilidad o la persistencia.
 
 \begin{figure}[htbp]
-\centering
-\includegraphics[width=\textwidth]{Tesis Escrito/flujo_instalacion_modelo.pdf}
-\caption{Flujo BPMN del proceso de instalación de un modelo}
-\label{fig:flujo_instalacion}
+    \centering
+    \includegraphics[width=1\textwidth]{Diagramas/Proceso de instalacion de modelo.png}
+    \caption{Proceso de instalación de un modelo}
+    \label{fig:flujo_instalacion}
 \end{figure}
 
-La detección automática del directorio raíz en el ZIP merece una descripción específica. Cuando el investigador crea el ZIP desde Windows utilizando PowerShell con el comando \texttt{Compress-Archive -Path lsec\_bio\_gloss\_final\_v1 -DestinationPath modelo.zip} (sin el sufijo \texttt{\textbackslash{}*}), el ZIP resultante contiene un directorio raíz con el nombre de la carpeta, de modo que el \texttt{manifest.json} no está en la raíz del ZIP sino en \texttt{lsec\_bio\_gloss\_final\_v1/manifest.json}. El middleware detecta este patrón comprobando si todos los archivos del ZIP comparten un mismo prefijo de directorio y, en ese caso, descarta ese prefijo al leer el manifest y al extraer los archivos. Esta corrección automática evita que un error frecuente al crear el ZIP produzca un fallo de instalación confuso para el usuario.
+También se resolvió un caso frecuente de empaquetado en Windows. Si el ZIP conserva una carpeta raíz, el manifest puede quedar en \textbf{lsec\_bio\_gloss\_final\_v1/manifest.json} en lugar de la raíz del comprimido. El middleware detecta si todas las entradas comparten el mismo prefijo y lo elimina al leer el manifest y extraer archivos. De esta manera, un detalle de empaquetado no se convierte en un error difícil de interpretar para el usuario.
 
-El criterio de verificación de esta fase fue la correcta instalación del modelo \texttt{lsec\_bio\_gloss\_final\_v1} versión \texttt{1.0.0} mediante el endpoint \texttt{POST /api/v1/models/install}, seguida de la verificación de que el modelo aparece en el listado de \texttt{GET /api/v1/models} con estado \texttt{available}, que el archivo \texttt{registry.json} contiene la entrada correcta con todos los campos del manifest, y que el directorio de bootstrap manifests contiene el archivo de respaldo generado con el nombre \texttt{lsec\_bio\_gloss\_final\_v1\_\_1.0.0.json}. También se verificó el escenario de error de instalación duplicada: al intentar instalar el mismo modelo una segunda vez, el middleware debe responder con HTTP 409 y el código de error \texttt{MODEL\_ALREADY\_EXISTS} con un mensaje que identifica exactamente el modelo y la versión en conflicto.
+El criterio de verificación fue instalar \textbf{lsec\_bio\_gloss\_final\_v1} versión \textbf{1.0.0} mediante \textbf{POST \symbol{47}api\symbol{47}v1\symbol{47}models\symbol{47}install}. Se comprobó que el modelo apareciera como \textbf{available}, que \textbf{registry.json} almacenara la entrada completa, que existiera el bootstrap manifest y que una instalación duplicada respondiera HTTP 409 con \textbf{MODEL\_ALREADY\_EXISTS}.
 
-\paragraph{Fase 3 — Docker Runner e inferencia.}
+\subsubsection{Fase 3 — Docker Runner e inferencia}
 
-La tercera fase implementó el mecanismo de ejecución de inferencias mediante el \texttt{DockerRunner}. Este componente es el único runner activo en el sistema y concentra toda la lógica de interacción con el contenedor del modelo durante una solicitud de inferencia: garantizar que el contenedor esté corriendo, verificar su disponibilidad, enviar el payload y adaptar la respuesta al contrato de salida del middleware.
+La tercera fase introdujo \textbf{DockerRunner}, el componente que ejecuta inferencias en el contenedor del modelo. Su trabajo es preparar el entorno antes de cada solicitud: verificar que el contenedor exista, iniciarlo si está detenido, comprobar su disponibilidad, construir la carga útil, enviar la solicitud al backend y adaptar la respuesta al contrato del middleware. Con esta separación, \textbf{JobService} queda libre de los detalles del SDK de Docker.
 
-La comunicación entre el middleware y el contenedor del modelo ocurre exclusivamente a través de la red Docker \texttt{elan-ai-shared}. El middleware resuelve la dirección del contenedor mediante su nombre de contenedor como hostname, aprovechando el DNS interno que Docker proporciona a todos los contenedores conectados a la misma red. Esta arquitectura de red ofrece tres ventajas significativas. Primero, los contenedores de modelo no necesitan exponer puertos al sistema anfitrión para comunicarse con el middleware, lo que elimina el riesgo de conflictos de puertos con otros servicios del usuario. Segundo, la dirección del contenedor es siempre predecible porque se deriva del nombre del contenedor, sin depender de la IP dinámica asignada por Docker. Tercero, la red puede contener cualquier número de contenedores de modelo simultáneamente, sin configuración adicional en el \texttt{docker-compose.yml} del middleware.
+La comunicación entre el middleware y el backend ocurre dentro de la red \textbf{elan-ai-shared}. El middleware usa el nombre del contenedor como nombre de host y deja que el DNS interno de Docker lo resuelva. Gracias a ello no es necesario exponer un puerto del anfitrión por cada modelo, se elimina la dependencia de direcciones IP y varios backends pueden convivir en la misma red \cite{docker2026overview}.
 
-El \texttt{DockerRunner} implementa una máquina de estados para gestionar el ciclo de vida del contenedor durante una inferencia. El método \texttt{ensure\_container()} verifica el estado del contenedor y actúa según el resultado: si el contenedor existe y está corriendo, se reutiliza sin ninguna acción adicional, con un tiempo de \texttt{container\_start\_ms} registrado como cero; si el contenedor existe pero está detenido, se reinicia mediante \texttt{container.start()}; si el contenedor no existe pero la imagen Docker sí existe, se crea un nuevo contenedor con los parámetros correctos de red, nombre y volúmenes; y si la imagen Docker tampoco existe, se lanza una excepción \texttt{DockerImageNotFoundError} que devuelve HTTP 404 al cliente, indicando que el modelo debe ser reinstalado. Este comportamiento garantiza la resiliencia ante reinicios del sistema anfitrión: si Docker Desktop se reinicia y los contenedores de modelo se detienen, la primera inferencia posterior los reactivará automáticamente.
+El método \textbf{ensure\_container()} controla el ciclo de vida antes de inferir. Si el contenedor ya está ejecutándose, se reutiliza; si existe pero está detenido, se reinicia; si no existe pero la imagen sí, se crea un contenedor nuevo con red, nombre y volúmenes. Si falta la imagen, se lanza \textbf{DockerImageNotFoundError}, que el manejador global transforma en HTTP 404 para indicar que el modelo debe reinstalarse. Con esto, el sistema puede recuperarse de reinicios de Docker Desktop o del equipo anfitrión.
 
-Un aspecto técnico crítico de esta fase fue la gestión correcta de la ruta del video. El usuario de ELAN especifica la ruta del video en el sistema de archivos del host, típicamente una ruta Windows como \texttt{C:/Users/imbaq/Videos/seña.mp4}. Sin embargo, el backend del modelo —que ejecuta dentro de su propio contenedor Linux— accede a los videos a través del bind mount configurado en \texttt{MIDDLEWARE\_VIDEOS\_DIR}, que mapea el directorio del host al directorio \texttt{/data/videos} dentro del contenedor del modelo. El \texttt{DockerRunner} aplica una traducción de ruta antes de construir el payload de inferencia: extrae el nombre del archivo de la ruta del host y lo antepone a la ruta interna del contenedor. De esta forma, \texttt{C:/Users/imbaq/Videos/seña.mp4} se convierte en \texttt{/data/videos/seña.mp4} antes de enviarse al backend.
+Un punto crítico fue traducir la ruta del video. ELAN selecciona archivos del sistema anfitrión, por ejemplo \textbf{C:/Users/imbaq/Videos/seña.mp4}; el backend, al ejecutarse en Linux dentro del contenedor, accede al archivo mediante \textbf{\symbol{47}data\symbol{47}videos}. Por ello, \textbf{DockerRunner} toma el nombre del archivo recibido y lo antepone a la ruta interna del contenedor, produciendo \textbf{\symbol{47}data\symbol{47}videos\symbol{47}seña.mp4}. La variable \textbf{MIDDLEWARE\_VIDEOS\_DIR} se pasa al SDK de Docker como cadena cruda para conservar correctamente rutas de Windows \cite{docker_sdk_python}.
 
-La gestión correcta de la variable \texttt{MIDDLEWARE\_VIDEOS\_DIR} requirió una decisión técnica no obvia que fue identificada y resuelta durante esta fase. Dentro del contenedor Linux del middleware, una cadena de texto como \texttt{"C:/Users/imbaq/Videos"} no representa una ruta absoluta válida en Linux —las rutas absolutas en Linux comienzan con \texttt{/}—. Si se aplicara \texttt{Path("C:/Users/imbaq/Videos").resolve()}, Python trataría esta cadena como una ruta relativa y la resolvería anteponiéndole el directorio de trabajo actual del contenedor (\texttt{/app}), produciendo \texttt{/app/C:/Users/imbaq/Videos}. Al pasar esta cadena corrompida al SDK de Docker como fuente del bind mount, Docker Desktop intenta interpretarla como un volumen con múltiples separadores de dos puntos, lo que resulta en un error de montaje. La solución adoptada fue pasar el valor de \texttt{MIDDLEWARE\_VIDEOS\_DIR} como cadena cruda —sin conversión a objeto \texttt{Path} ni llamada a \texttt{resolve()}— directamente al SDK de Docker, que conoce cómo traducir rutas Windows al formato del sistema anfitrión independientemente del sistema operativo donde se ejecute el proceso.
+Antes de llamar al backend, \textbf{DockerRunner} ejecuta polling contra \textbf{GET \symbol{47}health} cada 250 milisegundos. Se diferenciaron dos timeouts: \textbf{backend\_config.startup\_timeout\_sec = 180} durante instalación, porque el backend puede cargar pesos por primera vez; y \textbf{container.startup\_timeout\_sec = 30} durante inferencia, porque el contenedor ya debería estar preparado o reiniciarse con rapidez.
 
-Tras garantizar que el contenedor está corriendo, el \texttt{DockerRunner} verifica su disponibilidad mediante un ciclo de polling sobre el endpoint \texttt{GET /health} del backend. Este ciclo espera hasta \texttt{container.startup\_timeout\_sec} segundos con reintentos cada 250 milisegundos. El valor de timeout durante la inferencia (\texttt{container.startup\_timeout\_sec = 30} segundos) es distinto del timeout durante la instalación (\texttt{backend\_config.startup\_timeout\_sec = 180} segundos) porque en la instalación el backend debe cargar por primera vez todos sus pesos —proceso que puede tardar varios minutos para modelos grandes— mientras que en la inferencia el contenedor simplemente debe responder tras haberse reiniciado.
+Los estados de un job se resumen en la Figura~\ref{fig:estados_job}. La figura funciona como contrato operativo para interpretar logs, métricas y respuestas: todo job inicia en \textbf{RECEIVED}, pasa por validación, preprocesamiento, cola y ejecución, y termina en \textbf{COMPLETED}, \textbf{FAILED} o \textbf{TIMEOUT}.
 
-Los estados por los que transita un job durante su ejecución se representan mediante la máquina de estados de la Figura \ref{fig:estados_job}.
-
-\begin{figure}[h]
-\centering
-\fbox{\parbox{0.85\textwidth}{\centering\vspace{1.5cm}
-\textit{Figura: Máquina de estados de un job de inferencia}\\[6pt]
-RECEIVED $\to$ VALIDATING $\to$ PREPROCESSING $\to$ QUEUED $\to$ RUNNING\\
-$\to$ POSTPROCESSING $\to$ COMPLETED\\
-\textit{En cualquier etapa:} $\to$ FAILED / TIMEOUT
-\vspace{1.5cm}}}
-\caption{Máquina de estados de un job de inferencia}
-\label{fig:estados_job}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.55\textwidth]{Diagramas/Maquina de estados del Job.png}
+    \caption{Máquina de estados de un job de inferencia}
+    \label{fig:estados_job}
 \end{figure}
 
-Cada estado tiene un propósito semántico concreto. El estado \texttt{RECEIVED} confirma al cliente que la solicitud fue aceptada. El estado \texttt{VALIDATING} indica que se está verificando que el modelo existe en el registry y está disponible para inferencia. El estado \texttt{PREPROCESSING} indica que se está construyendo el objeto \texttt{InferenceInput} con los parámetros de ejecución y la ruta del video traducida. El estado \texttt{QUEUED} indica que el job está esperando un slot en la cola de concurrencia. El estado \texttt{RUNNING} indica que el \texttt{DockerRunner} está ejecutando la inferencia en el contenedor del modelo. El estado \texttt{POSTPROCESSING} indica que la respuesta del backend está siendo validada y adaptada al formato de salida del middleware. El estado \texttt{COMPLETED} indica que los segmentos están disponibles. Los estados \texttt{FAILED} y \texttt{TIMEOUT} son terminales de error.
+Cada estado cumple una función específica: \textbf{VALIDATING} verifica el modelo; \textbf{PREPROCESSING} construye \textbf{InferenceInput} y traduce la ruta del video; \textbf{QUEUED} indica espera por el límite de concurrencia; \textbf{RUNNING} corresponde a la llamada de \textbf{DockerRunner}; \textbf{POSTPROCESSING} valida y adapta la respuesta; y los estados finales clasifican el resultado de la ejecución.
 
-La respuesta de una inferencia exitosa incluye, además de los segmentos detectados, un campo \texttt{trace} con información de trazabilidad: el nombre del runner utilizado, la imagen Docker del modelo, el identificador del contenedor, el tiempo transcurrido en cada etapa del pipeline (validación, cola, inferencia, postprocesamiento), y el historial de transiciones de estado del job. Esta información es directamente utilizable para diagnóstico durante las pruebas de carga y para la documentación de la arquitectura en la tesis.
+La respuesta exitosa incluye los segmentos y un campo de trazabilidad que registra el runner, la imagen Docker, el contenedor, los tiempos de validación, cola, inferencia y postprocesamiento, además del historial de estados. Esta trazabilidad facilita reconstruir la ejecución durante las pruebas y diagnosticar fallos en una arquitectura compuesta \cite{sigelman2010dapper}.
 
-La Figura \ref{fig:flujo_inferencia} muestra el flujo completo de una inferencia desde la solicitud de ELAN hasta la inserción de anotaciones.
+La Figura~\ref{fig:flujo_inferencia} relaciona los componentes de la inferencia: ELAN envía la solicitud, el middleware encola el job, DockerRunner prepara el contenedor, el backend procesa el video y el middleware adapta los segmentos para ELAN. El bloque interno del backend resume la canalización definida para el modelo utilizado en la validación; esta canalización pertenece al backend ejecutado en el contenedor y no al núcleo del middleware.
 
-\begin{figure}[h]
-\centering
-\fbox{\parbox{0.85\textwidth}{\centering\vspace{3cm}
-\textit{Figura: Flujo completo de una inferencia}\\[4pt]
-ELAN $\xrightarrow{\text{POST /jobs/segment-video}}$ Middleware $\xrightarrow{\text{valida modelo}}$ JobQueue\\
-$\downarrow$\\
-DockerRunner: ensure\_container $\rightarrow$ wait\_for\_health $\rightarrow$ POST /infer\\
-$\downarrow$\\
-Backend Docker: extrae keypoints $\rightarrow$ BIO-LSTM $\rightarrow$ Transformer $\rightarrow$ segmentos\\
-$\downarrow$\\
-Middleware: adapta respuesta $\xrightarrow{\text{segmentos temporales}}$ ELAN: inserta anotaciones
-\vspace{3cm}}}
-\caption{Flujo completo de una inferencia desde ELAN hasta las anotaciones}
-\label{fig:flujo_inferencia}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{Diagramas/ELAN Video Segmentation-2026-06-20-052314.png}
+    \caption{Flujo completo de una inferencia desde ELAN hasta las anotaciones}
+    \label{fig:flujo_inferencia}
 \end{figure}
 
-Los errores que puede reportar el \texttt{DockerRunner} durante una inferencia están tipificados en una jerarquía de excepciones que permite al manejador global de FastAPI asignar el código HTTP correcto a cada tipo de fallo. \texttt{DockerNotAvailableError} (HTTP 503) indica que el demonio de Docker no está ejecutándose en el anfitrión. \texttt{DockerImageNotFoundError} (HTTP 404) indica que la imagen del backend fue eliminada manualmente y el modelo debe reinstalarse. \texttt{DockerContainerStartError} (HTTP 502) indica que el contenedor no pudo iniciarse, posiblemente por falta de recursos del anfitrión. \texttt{DockerContainerHealthcheckFailedError} (HTTP 502) indica que el contenedor inició pero el backend no respondió al health check dentro del tiempo límite, lo que generalmente indica un error en el código del backend durante la carga de los pesos. \texttt{DockerInferenceError} (HTTP 502) indica que el backend respondió con un código de error HTTP durante la inferencia, y el mensaje de detalle incluye el campo \texttt{detail} del cuerpo JSON del error devuelto por el backend. \texttt{DockerTimeoutError} (HTTP 504) indica que la inferencia superó el tiempo límite configurado en \texttt{execution.timeout\_sec}. Esta tipificación exhaustiva garantiza que el cliente —ELAN o cualquier herramienta de prueba— puede determinar la naturaleza del fallo sin necesidad de analizar los logs del servidor.
+Los errores de \textbf{DockerRunner} se tradujeron a códigos HTTP con significado propio: \textbf{DockerNotAvailableError} responde 503; \textbf{DockerImageNotFoundError}, 404; \textbf{DockerContainerStartError} y \textbf{DockerContainerHealthcheckFailedError}, 502; \textbf{DockerInferenceError}, 502 con el detalle reportado por el backend; y \textbf{DockerTimeoutError}, 504. De este modo, ELAN, Postman o cualquier otro cliente identifica la causa de una falla sin necesidad de revisar los logs.
 
-El criterio de verificación de esta fase fue la ejecución exitosa de una inferencia desde Postman, con una respuesta que incluyera al menos un segmento temporal con campos \texttt{start\_ms}, \texttt{end\_ms}, \texttt{label} y \texttt{predictions}, acompañada de la verificación de que los logs del middleware muestran la transición completa de estados desde \texttt{RECEIVED} hasta \texttt{COMPLETED}, y que el campo \texttt{trace} de la respuesta incluye los tiempos de cada etapa y el identificador del contenedor Docker utilizado.
+El criterio de verificación fue ejecutar una inferencia desde Postman y recibir al menos un segmento con \textbf{start\_ms}, \textbf{end\_ms}, \textbf{label} y \textbf{predictions}. También se comprobó que los logs mostraran la transición de \textbf{RECEIVED} a \textbf{COMPLETED} y que \textbf{trace} incluyera tiempos por etapa e identificador del contenedor.
 
-\paragraph{Fase 4 — Cola de jobs, métricas y estado TIMEOUT.}
+\subsubsection{Fase 4 — Cola de jobs, métricas y estado TIMEOUT}
 
-La cuarta fase implementó tres componentes complementarios orientados al comportamiento del sistema bajo carga y a su observabilidad: la cola FIFO de jobs con límite configurable de concurrencia, el servicio de métricas con contadores thread-safe, y la diferenciación explícita del estado \texttt{TIMEOUT} como distinto del estado \texttt{FAILED}.
+La cuarta fase añadió control de concurrencia, métricas y separación explícita entre \textbf{FAILED} y \textbf{TIMEOUT}. Estos componentes no modifican el pipeline de IA; regulan el acceso a recursos compartidos, hacen observable la ejecución y comunican fallos temporales de forma clara.
 
-El primer componente es la cola FIFO de jobs (\texttt{JobQueue}). La decisión de diseño central de este componente fue no utilizar el \texttt{threading.Semaphore} estándar de Python, que no garantiza orden FIFO: cuando un semáforo libera a múltiples hilos en espera simultáneamente, el orden de activación depende del planificador del sistema operativo. En su lugar, se implementó una cola explícita mediante \texttt{collections.deque} con un \texttt{threading.Event} por cada job en espera. El algoritmo es el siguiente: cuando un nuevo job no encuentra un slot libre, crea un \texttt{Event} bloqueado, agrega la tupla \texttt{(job\_id, event)} al final del \texttt{deque}, y bloquea su hilo HTTP llamando a \texttt{event.wait()}. Cuando un job en ejecución termina, libera su slot y llama a \texttt{deque.popleft()} para extraer y despertar el job más antiguo en espera mediante \texttt{event.set()}. Todas las operaciones sobre la cola y el contador de slots activos están protegidas por un único \texttt{threading.Lock}, lo que garantiza que son atómicas y libres de condiciones de carrera.
+El primer componente fue \textbf{JobQueue}. Se descartó el uso de un semáforo porque limitaría la concurrencia sin garantizar el orden FIFO; en su lugar se combinó una cola \textbf{collections.deque}, un \textbf{threading.Event} por cada job en espera y un \textbf{threading.Lock} que protege el contador de slots activos. Cuando no hay slots libres, el job se añade al final del deque y su hilo queda bloqueado; al terminar un job, el slot se libera y se despierta al job más antiguo en espera. Así se controla la concurrencia y se garantiza un trato equitativo entre solicitudes \cite{python_threading}.
 
-El número máximo de jobs simultáneos se configura mediante la variable de entorno \texttt{MIDDLEWARE\_MAX\_CONCURRENT\_JOBS} con valor por defecto 1. Este mecanismo actúa como control implícito sobre el consumo de memoria de GPU: limitar a un job simultáneo garantiza que solo un backend Docker puede estar cargando pesos en GPU en un momento dado, lo que previene errores de memoria cuando los modelos son grandes. El valor de \texttt{MIDDLEWARE\_MAX\_CONCURRENT\_JOBS} puede incrementarse en entornos con GPU de mayor capacidad o cuando se desea ejecutar múltiples modelos distintos de forma paralela, sin modificar ningún código del middleware.
+El límite de concurrencia se expone en la variable \textbf{MIDDLEWARE\_MAX\_CONCURRENT\_JOBS}, con valor predeterminado de 1. Funciona como un control indirecto de recursos: impide que varios backends carguen sus pesos en memoria al mismo tiempo y, en equipos con mayor capacidad, permite ampliar la concurrencia sin modificar el código.
 
-El segundo componente es el \texttt{MetricsService}, que mantiene contadores acumulados desde el inicio del middleware en memoria, protegidos por un único \texttt{threading.Lock} para garantizar consistencia ante accesos concurrentes. Los contadores mantenidos son: \texttt{total\_jobs} (jobs recibidos), \texttt{completed\_jobs} (jobs finalizados con éxito), \texttt{failed\_jobs} (jobs con error funcional del backend), \texttt{timeout\_jobs} (jobs que excedieron el tiempo límite), la suma acumulada de tiempos de ejecución de jobs completados (para calcular el promedio), y un diccionario de conteo por código de error (\texttt{error\_counts}). Los campos \texttt{active\_jobs} y \texttt{queued\_jobs} no son contadores sino snapshots del estado actual de la \texttt{JobQueue}, leídos en tiempo real al construir la respuesta del endpoint \texttt{GET /api/v1/metrics}.
+El segundo componente fue \textbf{MetricsService}. Este servicio mantiene contadores protegidos por \textbf{threading.Lock}: jobs recibidos, completados, fallidos, expirados por timeout y un conteo de errores por código. Los campos \textbf{active\_jobs} y \textbf{queued\_jobs} no son contadores, sino un snapshot del estado de \textbf{JobQueue} tomado al consultar \textbf{GET /api/v1/metrics}.
 
-Un aspecto técnico importante de la \texttt{JobQueue} es su integración con el modelo de concurrencia de Uvicorn. Cuando el endpoint \texttt{POST /api/v1/jobs/segment-video} recibe una solicitud, Uvicorn le asigna un hilo del pool de hilos (ya que el handler del endpoint es una función síncrona, no una corrutina asíncrona). Ese hilo puede quedar bloqueado en \texttt{JobQueue.submit()} si todos los slots están ocupados. Durante ese bloqueo, el hilo no libera el slot del pool de Uvicorn, lo que significa que el pool necesita tener capacidad suficiente para atender solicitudes de inferencia en cola más las solicitudes de gestión concurrentes. El número de hilos en el pool de Uvicorn se configura mediante la variable \texttt{--workers} y tiene un valor por defecto adecuado para el caso de uso de usuario único. Si se necesita aumentar la concurrencia de solicitudes de cola, se debe aumentar el número de hilos del pool de Uvicorn proporcionalmente.
+La integración con Uvicorn exigió considerar que \textbf{POST /api/v1/jobs/segment-video} se ejecuta como manejador sincrónico: si no hay slots libres, el hilo queda bloqueado en \textbf{JobQueue.submit()} hasta que llegue su turno. La configuración del servidor debe tolerar solicitudes en espera y, al mismo tiempo, seguir atendiendo endpoints de gestión como \textbf{GET /health} o las métricas; si se amplía la concurrencia, el número de workers de Uvicorn debe crecer en proporción \cite{uvicorn_docs}.
 
-El tercer componente es la diferenciación del estado \texttt{TIMEOUT}. Antes de esta fase, cualquier excepción durante la inferencia resultaba en el estado \texttt{FAILED}. Sin embargo, desde la perspectiva del diagnóstico de problemas, existe una diferencia importante entre un backend que devuelve un error porque encontró un problema con el video (un fallo funcional) y un backend que simplemente no respondió dentro del tiempo límite (un problema de latencia). Un sistema que solo reporta \texttt{FAILED} en ambos casos obliga al operador a revisar los logs para distinguir los dos casos. Con el estado \texttt{TIMEOUT} diferenciado, el contador correspondiente en el endpoint de métricas muestra inmediatamente cuántos jobs han expirado por latencia, sin necesidad de revisar logs.
+El tercer componente fue el estado \textbf{TIMEOUT}. Antes, toda excepción de inferencia terminaba en \textbf{FAILED}; sin embargo, un error funcional del backend y una inferencia que excede el tiempo máximo no representan el mismo problema. Con \textbf{TIMEOUT}, las métricas separan fallos funcionales de fallos por latencia, facilitando el diagnóstico sin revisar logs.
 
-En \texttt{job\_service.py}, el bloque que ejecuta la inferencia captura \texttt{DockerTimeoutError} específicamente antes del manejador genérico de \texttt{DockerServiceError}, actualizando el contador \texttt{timeout\_jobs} y devolviendo HTTP 504 al cliente con el código de error \texttt{DOCKER\_TIMEOUT}. Esta distinción tiene relevancia directa para las pruebas de carga documentadas en la Fase 6.
+La implementación en \textbf{job\_service.py} captura \textbf{DockerTimeoutError} antes que el manejador genérico de \textbf{DockerServiceError}. Cuando ocurre, el job termina en \textbf{TIMEOUT}, \textbf{MetricsService} incrementa \textbf{timeout\_jobs} y el middleware responde HTTP 504 con \textbf{DOCKER\_TIMEOUT}. Esta distinción se usó en las pruebas de carga y en el escenario de timeout forzado.
 
-\paragraph{Fase 5 — Integración con la interfaz de ELAN.}
+\subsubsection{Fase 5 — Integración con la interfaz de ELAN}
 
-La quinta fase cerró el ciclo de usuario completo mediante la implementación de los componentes Java que integran el middleware en la interfaz gráfica de ELAN. Esta fase es la que mayor impacto tiene sobre la experiencia del investigador, ya que determina cómo se presenta y se usa el sistema desde ELAN.
+La quinta fase trasladó las capacidades del middleware a la interfaz gráfica de ELAN. Hasta ese momento, la instalación y la inferencia podían ejecutarse desde Postman o clientes HTTP; sin embargo, el objetivo del TIC requería que el investigador permaneciera dentro del entorno de anotación. Por ello se implementaron acciones para instalar modelos, consultar conectividad, seleccionar el modelo activo, configurar la inferencia, ejecutar el reconocedor y mostrar errores desde ELAN \cite{auer2014avatech}.
 
-Se implementaron o modificaron cinco clases dentro del código fuente de ELAN, en el paquete \texttt{mpi.eudico.client.annotator.recognizer.ai}.
+La integración se ubicó en el paquete \textbf{mpi.\allowbreak{}eudico.\allowbreak{}client.\allowbreak{}annotator.\allowbreak{}recognizer.\allowbreak{}ai}. La clase \textbf{AIOrchestration\allowbreak{}MiddlewareClient} concentra la comunicación HTTP mediante \textbf{java.net.http.\allowbreak{}HttpClient} y fija \textbf{HTTP/1.1}, porque Uvicorn no ofrece HTTP/2 por defecto y durante las pruebas se identificaron fallos cuando el cliente intentaba negociar otra versión \cite{java11_httpclient,uvicorn_docs}. Esta clase evita duplicar solicitudes en el panel, el diálogo de modelos y el reconocedor.
 
-La clase \texttt{AIOrchestrationMiddlewareClient} es el cliente HTTP que encapsula todas las llamadas al middleware. Emplea \texttt{java.net.http.HttpClient} con la versión de protocolo forzada a HTTP/1.1 mediante \texttt{.version(HttpClient.Version.HTTP\_1\_1)}. La razón de forzar HTTP/1.1 es que el servidor Uvicorn no soporta el protocolo HTTP/2 en su configuración por defecto, y el cliente Java de Oracle intenta actualizar la conexión a HTTP/2 si no se indica lo contrario, lo que resulta en un fallo de conexión inmediato. Esta restricción fue descubierta experimentalmente durante el desarrollo de esta fase.
+El método \textbf{installModel} envía el ZIP como \textbf{multipart/form-data}. Java 11 no ofrece un constructor nativo de cuerpos multipart en \textbf{HttpClient}, por lo que el cuerpo se arma manualmente: boundary, cabeceras de la parte \textbf{file}, bytes del ZIP y cierre del multipart. La estructura enviada conserva el formato esperado por FastAPI para recibir archivos:
 
-El método \texttt{installModel(zipFile)} construye una solicitud \texttt{multipart/form-data} de forma manual, ya que \texttt{java.net.http.HttpClient} no incluye soporte nativo para este tipo de contenido en Java 11. El cuerpo de la solicitud se construye como un arreglo de bytes con el boundary y las cabeceras de parte correctas:
-
-\begin{verbatim}
+\begin{center}
+\begin{minipage}{0.82\textwidth}
+\hrule
+\vspace{0.12cm}
+\small
+\begin{Verbatim}[baselinestretch=0.82]
 --FormBoundary<uuid>
 Content-Disposition: form-data; name="file"; filename="modelo.zip"
 Content-Type: application/octet-stream
 
 [bytes del archivo ZIP]
 --FormBoundary<uuid>--
-\end{verbatim}
+\end{Verbatim}
+\vspace{0.05cm}
+\hrule
 
-Una restricción importante descubierta durante las pruebas es que FastAPI rechaza los boundaries que comienzan con dos guiones (\texttt{--}) en el valor del header \texttt{Content-Type}, aunque esta forma es válida según la especificación RFC 2046. Para evitar este rechazo, el boundary en el header \texttt{Content-Type} se declara sin guiones iniciales (\texttt{FormBoundary<uuid>}), mientras que los delimitadores en el cuerpo de la solicitud sí incluyen los dos guiones de prefijo requeridos por la especificación.
+\captionof{listing}{Cuerpo multipart enviado por el cliente Java para instalar modelos}
+\label{lst:multipart_install_model}
+\end{minipage}
+\end{center}
 
-El método \texttt{buildErrorMessage(int statusCode, String body)} fue añadido para resolver un problema de usabilidad identificado durante las pruebas funcionales: cuando el middleware devuelve un error HTTP, el body de la respuesta contiene un JSON con un campo \texttt{detail} que describe el problema en términos entendibles para el usuario. Sin este método, la excepción \texttt{AIOrchestrationMiddlewareException} solo almacenaba el código de estado HTTP y mostraba al usuario mensajes como "Middleware returned HTTP 409", sin indicar que el modelo ya estaba instalado. Con el método \texttt{buildErrorMessage()}, el cliente Java extrae el campo \texttt{detail} del JSON de respuesta y lo usa como mensaje de error en el diálogo de ELAN, de modo que el usuario ve directamente "Model 'lsec\_bio\_gloss\_final\_v1' version '1.0.0' is already installed." Este método aplica a todas las operaciones del cliente —instalación, activación, desactivación, inferencia— sin necesidad de código específico en cada método.
+Durante las pruebas se observó que el header \textbf{Content-Type} no debía incluir los dos guiones iniciales del boundary, aunque los delimitadores del cuerpo sí los requieren. Por ello se declaró un boundary como \textbf{FormBoundary<uuid>} en el header y se conservaron los guiones en el cuerpo, conforme al formato \textbf{multipart/form-data} \cite{rfc7578}.
 
-La clase \texttt{AIModelManagerDialog} es un diálogo Swing que expone la gestión de modelos al investigador. El diálogo incluye un indicador de conexión al middleware (punto verde o rojo con texto descriptivo), un botón para probar la conectividad, una tabla con los modelos instalados y su estado, botones para instalar un nuevo ZIP, activar y desactivar el modelo seleccionado, y un área de log de actividad en tiempo real. La decisión de diseño más importante de este componente es que todas las operaciones HTTP se ejecutan dentro de instancias de \texttt{SwingWorker}. Este patrón garantiza que las operaciones de red nunca bloquean el hilo de eventos de la interfaz gráfica (EDT, \textit{Event Dispatch Thread}), lo que evita que ELAN quede congelado mientras espera la respuesta del middleware. Cada \texttt{SwingWorker} actualiza la interfaz mediante el método \texttt{done()}, que se ejecuta en el EDT después de que la operación de red ha completado.
+La clase \textbf{AIModel\allowbreak{}ManagerDialog} implementa el diálogo Swing de gestión de modelos. Incluye indicador de conexión, prueba de conectividad, tabla de modelos, instalación de ZIP, activación, desactivación y log de actividad. Las operaciones HTTP se ejecutan con \textbf{SwingWorker} para no bloquear el EDT de Swing; al finalizar, \textbf{done()} actualiza la interfaz en el hilo seguro para componentes gráficos \cite{java_swingworker}.
 
-La clase \texttt{AIOrchestrationRecognizerPanel} fue rediseñada completamente para reemplazar los parámetros hardcodeados de la versión inicial por configuración dinámica. El panel incluye un campo de URL base del middleware, un combo de modelos instalados que se carga en background mediante el método \texttt{addNotify()} (que se invoca cuando el panel se hace visible por primera vez, evitando llamadas de red durante la construcción del panel antes de que el usuario abra la interfaz), campos para el tier destino y el modo de etiquetado (pre-poblados automáticamente con los valores del campo \texttt{ui} del manifest del modelo seleccionado), y un combo para el video a procesar. El timeout de 300 segundos no se expone al usuario porque es un detalle de implementación interna que no aporta valor a un investigador de lingüística.
+La clase \textbf{AIOrchestration\allowbreak{}RecognizerPanel} reemplazó parámetros hardcodeados por configuración visible: URL del middleware, modelo instalado, nivel de anotación destino, modo de etiquetado y video. Los modelos se cargan en segundo plano desde \textbf{addNotify()}, porque este método se ejecuta cuando el panel entra en la jerarquía visible y evita llamadas de red durante el constructor. Los valores sugeridos de nivel de anotación y modo se toman del campo \textbf{ui} del manifest.
 
-La clase \texttt{AIOrchestrationRecognizer} fue modificada para leer todos los parámetros de inferencia dinámicamente desde el panel en lugar de valores definidos en tiempo de compilación. Antes de esta fase, el reconocedor enviaba siempre el mismo tier destino y el mismo modelo, independientemente de lo que el usuario hubiera configurado en el panel. Tras la modificación, el reconocedor lee el modelo seleccionado mediante \texttt{controlPanel.getSelectedModel()}, el tier destino mediante \texttt{controlPanel.getTargetTier()}, el modo de etiquetado mediante \texttt{controlPanel.getLabelMode()}, y la URL base del middleware mediante \texttt{controlPanel.getBaseUrl()}.
+La clase \textbf{AIOrchestration\allowbreak{}Recognizer} lee en tiempo de ejecución los valores seleccionados en el panel: modelo, nivel de anotación, modo de etiquetado y URL base. Con ello, la solicitud enviada al middleware refleja la configuración visible del usuario y no valores definidos en tiempo de compilación. También se crearon DTOs en \textbf{.ai.dto} para separar comunicación, representación de datos y lógica gráfica.
 
-Se crearon además cinco clases DTO (\textit{Data Transfer Object}) en el subpaquete \texttt{.ai.dto} para encapsular los datos intercambiados entre el cliente Java y el middleware: \texttt{ModelSummary} para el listado de modelos, \texttt{InstalledModelDetail} para el detalle completo de un modelo, \texttt{ModelUiConfig} para la configuración de la interfaz de usuario declarada en el manifest, \texttt{SegmentVideoRequest} para la solicitud de inferencia, y \texttt{SegmentVideoResponse} para la respuesta con segmentos. La separación de los DTOs en clases propias evita el acoplamiento entre la lógica del cliente HTTP y el formato de datos de la API: si el middleware modifica el nombre de un campo en la respuesta de listado de modelos, solo la clase \texttt{ModelSummary} necesita actualizarse, sin afectar la lógica del panel ni la del recognizer.
+\textbf{SegmentVideoRequest} incorpora el método de fábrica \textbf{create}, que construye el payload con job, video, modelo, versión, nivel de anotación, etiqueta, modo de etiquetado, timeout de 300 segundos y \textbf{parameters} como objeto vacío. Esta decisión permite que el backend use su propia configuración interna y garantiza que el campo \textbf{parameters} siempre esté presente en la solicitud.
 
-La clase \texttt{SegmentVideoRequest} incluye un método de fábrica estático \texttt{create(jobId, videoPath, modelId, version, tier, label, labelMode)} que construye la solicitud con los parámetros de anotación dinámicos del panel y usa valores fijos para los campos de ejecución: el timeout se fija en 300 segundos (invisible al usuario, suficiente para videos de hasta varios minutos) y los parámetros de pipeline se envían como un objeto vacío \texttt{\{\}}, permitiendo que el backend use su propio archivo de configuración sin interferencia del cliente. La clase \texttt{ParametersPayload} incluye el método \texttt{createEmpty()} que serializa a \texttt{\{\}}, asegurando que el campo siempre esté presente en el JSON aunque vacío, cumpliendo el contrato del middleware que requiere el campo \texttt{parameters} como parte del payload.
+La comunicación entre \textbf{AIModel\allowbreak{}ManagerDialog} y \textbf{AIOrchestration\allowbreak{}RecognizerPanel} se resolvió con un flag booleano. Al cerrar el diálogo, el panel consulta \textbf{isModelListChanged()} y refresca el combo si hubo cambios. Finalmente, \textbf{addNotify()} dispara la carga inicial de modelos mediante \textbf{SwingWorker}; si el middleware no está disponible, el error aparece cuando el usuario visualiza el panel y puede interpretarlo en contexto.
 
-La integración del diálogo \texttt{AIModelManagerDialog} con el panel \texttt{AIOrchestrationRecognizerPanel} emplea un patrón de comunicación simple mediante un flag booleano. Cuando el diálogo se cierra, el panel consulta el método \texttt{isModelListChanged()} para determinar si la lista de modelos fue modificada durante la sesión del diálogo. Si es así, el panel refresca el combo de modelos mediante una nueva solicitud al middleware. Este patrón evita el acoplamiento mediante eventos o callbacks, manteniendo la independencia entre las dos clases: el diálogo no necesita conocer que existe un panel padre, y el panel solo consulta el flag cuando el diálogo se cierra, no durante su ejecución.
+\subsubsection{Fase 6 — Validación final}
 
-El método \texttt{addNotify()} de \texttt{AIOrchestrationRecognizerPanel} es un método heredado de \texttt{JPanel} que se invoca automáticamente por el sistema Swing cuando el panel se hace parte de la jerarquía de componentes visibles —es decir, cuando el usuario abre el panel del reconocedor por primera vez—. Se sobreescribió este método para disparar la carga inicial de modelos en un \texttt{SwingWorker}, en lugar de hacerlo en el constructor del panel. La razón de esta decisión es que el panel puede ser instanciado por ELAN antes de que el middleware esté disponible o antes de que el usuario haya configurado la URL base, y cargar los modelos en el constructor podría producir errores de conexión que confundirían al usuario. Con \texttt{addNotify()}, la carga ocurre cuando el panel está realmente visible y el usuario tiene la oportunidad de ver cualquier error de conectividad en el contexto correcto.
+La sexta fase verificó el sistema completo: middleware, Docker, backend del modelo y reconocedor integrado en ELAN. La validación combinó pruebas de caja negra y de caja blanca, porque no bastaba con probar endpoints aislados; había que asegurar la instalación, la activación, la selección en ELAN, la inferencia, el manejo de errores, las métricas y las anotaciones temporales. Las pruebas se realizaron con el modelo \textbf{lsec\_bio\_gloss\_final\_v1} y videos de LSEc, manteniendo la arquitectura real del sistema \cite{fielding2000rest,docker2026overview}.
 
-\paragraph{Fase 6 — Validación final.}
+Se utilizó el modelo real en lugar de uno ficticio. Un modelo simulado habría validado la serialización y el transporte HTTP, pero no habría ejercitado la construcción de imágenes, el arranque de contenedores, la carga de pesos, la lectura de videos, la ejecución del pipeline ni la generación de segmentos reales. Esta decisión encareció las pruebas, aunque produjo evidencia representativa del escenario para el que se diseñó el middleware.
 
-La sexta fase se dedicó a la verificación completa del sistema mediante pruebas funcionales de caja negra y verificaciones de estado interno de caja blanca, ejecutadas sobre el sistema desplegado en condiciones reales de funcionamiento con el modelo \texttt{lsec\_bio\_gloss\_final\_v1} y videos de LSEc.
+Los escenarios de pruebas se identifican con códigos E-XX. Estos códigos no corresponden a errores o estados HTTP, sino que son etiquetas internas de trazabilidad. Por ejemplo, E-07 corresponde a una inferencia exitosa desde ELAN; E-08, a la revisión visual de anotaciones en la línea de tiempo; y E-13, al tiempo de espera forzado. Esta nomenclatura relaciona la acción, el resultado esperado, la evidencia y la categoría de cada prueba.
 
-La decisión metodológica central de esta fase fue utilizar el modelo real de producción en lugar de un runner artificial de prueba (\textit{dummy}). Esta decisión responde a que un runner dummy no valida la hipótesis central del trabajo: que el middleware puede orquestar correctamente un modelo de IA real. Un dummy que devuelve segmentos predefinidos verifica el mecanismo de serialización y la inserción de anotaciones en ELAN, pero no verifica el pipeline completo que incluye la construcción de la imagen Docker, el arranque del contenedor, la carga de los pesos del modelo, el procesamiento del video, y la generación de segmentos genuinos. Usar el modelo real como modelo de validación eleva la calidad de la evidencia y demuestra que el sistema funciona en las condiciones de uso para las que fue diseñado.
+Las pruebas de caja negra exploraron el comportamiento visible desde las interfaces expuestas al usuario final. Se definieron 15 escenarios en cuatro categorías: conectividad, gestión de modelos, inferencia y manejo de errores. Los escenarios cubrieron la comprobación de disponibilidad, la instalación, el listado y detalle de modelos, la activación y desactivación, la inferencia desde ELAN y desde Postman, la inserción de anotaciones en el nivel correcto y los fallos controlados: video inexistente, modelo desactivado, middleware detenido, contenedor detenido y tiempo de espera forzado, junto con la revisión de métricas. En cada caso se registraron la acción, la respuesta esperada y el comportamiento visible en ELAN, comprobando tanto la semántica REST como la experiencia del investigador \cite{fielding2000rest}.
 
-Los escenarios de caja negra cubren el comportamiento observable desde las interfaces públicas del sistema sin conocimiento del código interno. Se definieron quince escenarios organizados en cuatro categorías: verificación de conectividad (health check desde Postman y desde ELAN), gestión de modelos (instalación, listado, detalle, activación, desactivación), inferencia (inferencia exitosa desde ELAN y desde Postman, verificación de anotaciones en el tier correcto), y manejo de errores (video inexistente, modelo desactivado, middleware detenido, contenedor del modelo detenido, timeout forzado, métricas tras inferencias). Para cada escenario se documenta la acción exacta, el resultado esperado en términos de código HTTP y estructura JSON, y el comportamiento visible en la interfaz de ELAN cuando aplica.
+Las pruebas de caja blanca revisaron estados internos que no se observan solo desde la API: la persistencia en \textbf{registry.json}, la generación del bootstrap manifest, la recuperación automática del registro, el incremento de métricas, la traducción de la ruta del video en los logs y la configuración del bind mount mediante \textbf{docker inspect}. Estas verificaciones confirmaron que el estado persistente, los montajes y los contadores internos quedaban consistentes después de cada operación.
 
-Los escenarios de caja blanca se diseñaron con conocimiento del código interno y verifican el estado del sistema en las capas no visibles desde la API. En el contexto de esta tesis, la caja blanca no implica tests unitarios automatizados con frameworks de testing, sino la capacidad del evaluador de predecir y verificar el estado interno resultante de cada operación. Los seis escenarios de caja blanca verifican: la persistencia correcta en \texttt{registry.json} tras una instalación (mediante lectura directa del archivo en el contenedor), la generación del bootstrap manifest en el directorio correspondiente, la recuperación automática del registro tras eliminar \texttt{registry.json} y reiniciar el middleware, el incremento correcto de los contadores de métricas tras inferencias exitosas y fallidas, la traducción correcta de la ruta del video verificable en los logs del contenedor del backend, y la configuración del bind mount de videos verificable mediante \texttt{docker inspect}.
+Para rendimiento se usó \textbf{docker stats} en lugar de integrar \textbf{psutil}. La razón es que el consumo se distribuye entre dos contenedores: el middleware mantiene API, cola, contratos y orquestación; el backend ejecuta el pipeline, carga pesos y procesa video. Medir solo el proceso del middleware habría omitido el costo real de inferencia. \textbf{docker stats} permitió observar ambos contenedores desde el anfitrión y estimar el impacto sobre el hardware del usuario \cite{docker_cli_stats}. Los valores esperados para el equipo de desarrollo fueron menos de 5\% de CPU y menos de 150 MB de RAM para el middleware, y entre 60\% y 200\% de CPU junto con 1 a 4 GB de RAM para el backend.
 
-Para la medición de métricas de rendimiento computacional, se empleó \texttt{docker stats} en lugar de integrar \texttt{psutil} en el middleware. La razón es que el sistema involucra dos contenedores que contribuyen al consumo de recursos durante la inferencia: el contenedor del middleware (consumo bajo, principalmente en reposo durante la inferencia) y el contenedor del backend del modelo (consumo alto, ejecutando el pipeline de IA). Una medición basada en \texttt{psutil} dentro del middleware solo capturaría el consumo del orquestador, ignorando el costo real de la inferencia. En contraste, \texttt{docker stats} mide ambos contenedores simultáneamente desde el sistema operativo anfitrión, proporcionando una visión completa del impacto en el hardware del usuario final. Los valores de referencia esperados para el hardware de desarrollo son: el contenedor del middleware consume menos del 5\% de CPU y menos de 150 MB de RAM, mientras que el contenedor del backend del modelo consume entre 60\% y 200\% de CPU (donde 100\% equivale a un núcleo completo) y entre 1 y 4 GB de RAM durante la inferencia.
+El escenario \textbf{E-07} validó el flujo completo desde ELAN. El usuario selecciona el modelo, el video, el nivel de anotación destino y ejecuta el reconocedor. ELAN construye la solicitud, el middleware valida el contrato, localiza el modelo, traduce la ruta del video y solicita inferencia al backend. El resultado esperado es progreso visible y anotaciones en \textbf{AUTO\_GLOSS\_SEGMENTS}; sus tiempos deben coincidir con los intervalos visibles de señas. El escenario \textbf{E-08} complementa esta evidencia con la captura de la línea de tiempo donde se observan las anotaciones alineadas.
 
-Entre los escenarios de caja negra, el escenario E-07 de inferencia exitosa es el más completo porque ejercita el pipeline completo desde ELAN hasta las anotaciones. La acción consiste en seleccionar el modelo \texttt{lsec\_bio\_gloss\_final\_v1} en el panel del reconocedor, seleccionar un video de LSEc cargado en el archivo EAF, y ejecutar el reconocedor mediante el botón de inicio de ELAN. El resultado esperado es que ELAN muestre progreso durante la inferencia, y que al completar aparezcan anotaciones en el tier \texttt{AUTO\_GLOSS\_SEGMENTS} con etiquetas correspondientes a glosas del vocabulario LSEc entrenado. Los tiempos de inicio y fin de cada anotación deben corresponder a los intervalos de señas visibles en el video. El escenario E-08 complementa a E-07 capturando evidencia visual: una captura de pantalla del timeline de ELAN donde se observan las anotaciones generadas, con sus marcas de tiempo correctamente ubicadas sobre la línea temporal del video.
+El escenario \textbf{E-13} validó timeout controlado. Desde Postman se envió una inferencia con \textbf{execution.timeout\_sec: 1}, valor menor al tiempo real de procesamiento. El resultado esperado fue HTTP 504 con \textbf{DOCKER\_TIMEOUT}. Después del error, el middleware debía seguir disponible, sin bloquear la cola, perder el registro ni dejar estados inconsistentes.
 
-El escenario E-13 de timeout forzado tiene especial relevancia metodológica. Se ejecuta enviando desde Postman una solicitud de inferencia con \texttt{execution.timeout\_sec: 1}, valor que es deliberadamente inferior al tiempo de procesamiento real del modelo (decenas de segundos para un video típico). El resultado esperado es que el middleware responda con HTTP 504 y el cuerpo \texttt{\{"error\_code": "DOCKER\_TIMEOUT", "detail": "Docker inference timed out after 1s."\}}, y que el middleware permanezca disponible para nuevas solicitudes inmediatamente después, sin bloqueo ni estado inconsistente. Este escenario verifica que la gestión de timeouts no produce fugas de recursos ni corrupción del estado del sistema.
+En la prueba de carga controlada se enviaron dos inferencias simultáneas con \textbf{MIDDLEWARE\_MAX\_CONCURRENT\_JOBS=1}. El comportamiento esperado era que la primera pasara a \textbf{RUNNING} y la segunda quedara en \textbf{QUEUED}; al terminar la primera, la segunda debía continuar en orden FIFO. Los logs registraron la transición de \textbf{QUEUED} a \textbf{RUNNING} y las métricas finales reportaron \textbf{total\_jobs: 2} con ambos trabajos completados. La prueba confirmó que la cola limita la concurrencia, preserva el orden de llegada y mantiene las métricas consistentes.
 
-La prueba de carga controlada consiste en enviar dos solicitudes de inferencia simultáneas y verificar que la segunda queda en estado \texttt{QUEUED} mientras la primera se ejecuta, y que ambas se completan en el orden correcto. Los logs del middleware deben mostrar las transiciones \texttt{QUEUED → RUNNING} del segundo job inmediatamente después de que el primer job transiciona a \texttt{POSTPROCESSING → COMPLETED}, y el endpoint de métricas debe reflejar \texttt{total\_jobs: 2, completed\_jobs: 2} al finalizar.
 
-\vspace{1\baselineskip}
+\subsection{Contratos de comunicación entre componentes}
 
-\subsubsection{Contratos de comunicación entre componentes}
+El sistema se apoya en tres contratos de comunicación que ordenan el intercambio entre ELAN, el middleware y los backends de modelo. Estos contratos funcionan como una frontera clara entre tecnologías: ELAN mantiene su flujo de reconocedores AVATecH en Java, el middleware concentra la orquestación en Python y cada modelo ejecuta su inferencia dentro de un contenedor aislado. Por esta razón, los intercambios se definieron como cuerpos JSON sobre endpoints HTTP, una decisión coherente con el enfoque REST y con la necesidad de contar con interfaces verificables, documentables y desacopladas \cite{fielding2000rest}.
 
-El sistema define tres contratos de comunicación principales que deben respetarse para garantizar la interoperabilidad entre sus componentes. Estos contratos fueron definidos durante la fase de análisis y diseño y permanecieron estables a lo largo del desarrollo, con modificaciones menores que reflejan el proceso iterativo.
+La estructura general de estos contratos se mantuvo estable durante el desarrollo. Los ajustes realizados en las iteraciones afectaron la validación, la compatibilidad o el manejo de errores, pero nunca la responsabilidad principal de cada componente. Esa estabilidad resultó clave para integrar ELAN, Docker y los backends de IA sin depender de los detalles internos de cada uno.
 
-\paragraph{Contrato ELAN \texorpdfstring{$\rightarrow$}{->} Middleware (solicitud de inferencia).}
+\subsubsection{Contrato entre ELAN y el Middleware (solicitud de inferencia)}
 
-ELAN envía una solicitud \texttt{POST /api/v1/jobs/segment-video} con el siguiente cuerpo JSON. Cada campo tiene una semántica precisa que el middleware valida antes de iniciar la ejecución:
+ELAN inicia el flujo mediante una solicitud \textbf{POST /api/v1/jobs/segment-video}. Esta operación no ejecuta reconocimiento dentro de ELAN; solo entrega al middleware los datos necesarios para identificar el trabajo, ubicar el video, seleccionar el modelo, definir el nivel de anotación destino y establecer un tiempo máximo de ejecución. Antes de iniciar operaciones costosas, el middleware valida la estructura recibida con modelos Pydantic integrados a FastAPI, de modo que errores de formato, campos incompletos o valores incompatibles se detecten en la entrada y no durante la ejecución del contenedor \cite{pydantic2026models,fastapi2026features}:
 
-\begin{verbatim}
+\begin{center}
+\begin{minipage}{0.82\textwidth}
+\hrule
+\vspace{0.12cm}
+\small
+\begin{Verbatim}[baselinestretch=0.82]
 {
-  "job_id":    "identificador-unico-del-job",
-  "media":     {"path": "C:/Users/.../video.mp4"},
-  "model":     {"model_id": "nombre_modelo", "version": "1.0.0"},
-  "annotation":{
+  "job_id": "identificador-unico-del-job",
+  "media": {"path": "C:/Users/.../video.mp4"},
+  "model": {"model_id": "nombre_modelo", "version": "1.0.0"},
+  "annotation": {
     "target_tier": "NombreTier",
     "default_label": "REGION",
     "label_mode": "gloss_top1"
   },
   "execution": {"timeout_sec": 300}
 }
-\end{verbatim}
+\end{Verbatim}
+\vspace{0.05cm}
+\hrule
 
-El campo \texttt{job\_id} es un identificador arbitrario generado por el cliente; ELAN lo genera como una cadena que combina un prefijo semántico y un timestamp. El campo \texttt{media.path} contiene la ruta del video en el sistema de archivos del host, que el middleware traduce al sistema de archivos del contenedor del modelo antes de enviarla al backend. El campo \texttt{annotation.label\_mode} acepta los valores \texttt{gloss\_top1} (usa la glosa de mayor probabilidad como etiqueta de la anotación) o \texttt{simple} (usa la etiqueta por defecto sin clasificación). El campo \texttt{execution.timeout\_sec} establece el tiempo máximo de espera para la inferencia; si el backend no responde en ese tiempo, el middleware devuelve \texttt{DOCKER\_TIMEOUT} con HTTP 504.
+\captionof{listing}{Solicitud JSON enviada desde ELAN al middleware}
+\label{lst:request_elan_middleware}
+\end{minipage}
+\end{center}
 
-\paragraph{Contrato Middleware \texorpdfstring{$\rightarrow$}{->} Backend de modelo (payload de inferencia).}
+El campo \textbf{job\_id} permite seguir una solicitud en logs, métricas y consultas posteriores mediante \textbf{GET /api/v1/jobs/\{job\_id\}}. El objeto \textbf{media} contiene la ruta del video seleccionada desde ELAN, pero el middleware no la entrega al backend sin procesamiento, porque el contenedor ve una jerarquía de archivos distinta a la del anfitrión. El objeto \textbf{model} representa una versión concreta instalada, mientras que \textbf{annotation} define cómo se transformarán los segmentos en anotaciones: \textbf{target\_tier} indica el nivel de anotación destino, \textbf{default\_label} actúa como etiqueta de respaldo y \textbf{label\_mode} decide entre la glosa principal o una etiqueta simple. Finalmente, \textbf{execution.timeout\_sec} limita el tiempo de espera; si el backend lo supera, el middleware responde \textbf{DOCKER\_TIMEOUT} con HTTP 504.
 
-El middleware envía al endpoint \texttt{POST /infer} del contenedor del modelo un payload que contiene la ruta del video ya traducida al sistema de archivos del contenedor. El payload es estructuralmente similar al recibido de ELAN, con la diferencia de que \texttt{media.path} ya contiene la ruta interna del contenedor:
+\subsubsection{Contrato entre Middleware y el Backend de modelo (payload de inferencia)}
 
-\begin{verbatim}
+Después de validar la solicitud y seleccionar el modelo, el middleware traduce el contrato externo al contrato interno del backend. El cambio más importante ocurre en \textbf{media.path}: la ruta seleccionada en ELAN se convierte en la ruta visible dentro del contenedor según el bind mount de videos. Esta traducción es necesaria porque Docker aísla el sistema de archivos de cada contenedor y expone solo los directorios montados explícitamente \cite{docker2026overview}:
+
+\begin{center}
+\begin{minipage}{0.70\textwidth}
+\hrule
+\vspace{0.12cm}
+\footnotesize
+\begin{Verbatim}[baselinestretch=0.78]
 {
   "job_id": "identificador-unico-del-job",
-  "media":  {"path": "/data/videos/video.mp4"},
+  "media": {"path": "/data/videos/video.mp4"},
   "annotation": { ... },
   "parameters": {}
 }
-\end{verbatim}
+\end{Verbatim}
+\vspace{0.05cm}
+\hrule
 
-El campo \texttt{parameters} siempre se incluye aunque esté vacío, para que el backend pueda acceder a él sin comprobaciones de nulidad. El backend Docker tiene su propia configuración de pipeline en \texttt{config/pipeline\_config.json} que lee al iniciar; los parámetros externos no sobrescriben esa configuración.
+\captionof{listing}{Payload interno enviado desde el middleware al backend}
+\label{lst:payload_middleware_backend}
+\end{minipage}
+\end{center}
 
-\paragraph{Contrato Backend de modelo \texorpdfstring{$\rightarrow$}{->} Middleware (respuesta de inferencia).}
+El campo \textbf{parameters} se incluye siempre, aunque sea un objeto vacío. Con ello, el backend puede leer una estructura uniforme y se evitan casos especiales por ausencia del campo. Al mismo tiempo, esto no significa que ELAN pueda sobrescribir libremente la configuración interna del modelo: el pipeline conserva su configuración base en \textbf{config/pipeline\_config.json}. Por tanto, \textbf{parameters} queda como un espacio de extensión controlado, sin reemplazar los artefactos ni las reglas declaradas en el paquete del modelo.
 
-El backend debe retornar un objeto JSON con la siguiente estructura mínima que el middleware valida antes de construir la respuesta al cliente:
+\subsubsection{Contrato entre el Backend de un modelo y el Middleware (respuesta de inferencia)}
 
-\begin{verbatim}
+Cuando termina la inferencia, el backend devuelve un JSON con la salida técnica del pipeline. El middleware no solo acepta una respuesta porque el código HTTP sea exitoso, sino que también verifica que el tipo de salida, el tiempo del video y una lista de segmentos con marcas de inicio y fin estén presentes. Esta validación evita que una respuesta incompleta llegue a ELAN y genere anotaciones inconsistentes en la línea de tiempo:
+
+\begin{center}
+\begin{minipage}{0.92\textwidth}
+\hrule
+\vspace{0.12cm}
+\footnotesize
+\begin{Verbatim}[baselinestretch=0.76]
 {
   "output_type": "segments_with_gloss",
-  "media_info":  {"fps": 59.94, "duration_ms": 8508, "total_frames": 510},
-  "segments": [
-    {
-      "start_ms": 884, "end_ms": 1518,
-      "label": "TRABAJAR", "confidence": 0.164,
-      "predictions": [
-        {"rank": 1, "gloss_id": 10, "gloss": "TRABAJAR", "probability": 0.164},
-        {"rank": 2, "gloss_id": 7,  "gloss": "VER",       "probability": 0.126}
-      ]
-    }
-  ]
+  "media_info": {"fps": 59.94, "duration_ms": 8508, "total_frames": 510},
+  "segments": [{
+    "start_ms": 884, "end_ms": 1518,
+    "label": "TRABAJAR", "confidence": 0.164,
+    "predictions": [
+      {"rank": 1, "gloss_id": 10, "gloss": "TRABAJAR", "probability": 0.164},
+      {"rank": 2, "gloss_id": 7, "gloss": "VER", "probability": 0.126}
+    ]
+  }]
 }
-\end{verbatim}
+\end{Verbatim}
+\vspace{0.05cm}
+\hrule
 
-El campo \texttt{output\_type} identifica el tipo de respuesta para que el middleware pueda verificar que es compatible con el runner que la procesará. El campo \texttt{media\_info} es utilizado por ELAN para contextualizar los segmentos en el tiempo: la tasa de fotogramas y la duración total permiten a ELAN verificar que los tiempos de inicio y fin de los segmentos son coherentes con el video procesado.
+\captionof{listing}{Respuesta JSON del backend con segmentos y glosas}
+\label{lst:respuesta_backend_middleware}
+\end{minipage}
+\end{center}
 
-El Cuadro \ref{tab:endpoints_api} resume todos los endpoints de la API del middleware.
+El campo \textbf{output\_type} declara la forma semántica de la respuesta; en esta implementación, \textbf{segments\_with\_gloss} indica intervalos de tiempo acompañados de una etiqueta principal y de alternativas de predicción. El objeto \textbf{media\_info} aporta contexto del video procesado: \textbf{fps}, \textbf{duration\_ms} y \textbf{total\_frames}. Dentro de cada segmento, \textbf{label} es la etiqueta que se anotará, \textbf{confidence} refleja la confianza reportada por el backend y \textbf{predictions} lista las alternativas ordenadas por \textbf{rank}. La respuesta contiene así lo mínimo necesario para anotar en ELAN y, al mismo tiempo, información adicional útil para la revisión posterior. El Anexo~B presenta un ejemplo completo de esta respuesta, incluida la trazabilidad por etapas del campo \textbf{trace}.
 
-\begin{table}[h]
+La Tabla~\ref{tab:endpoints_api} resume los endpoints disponibles en la API REST del middleware, agrupados según su responsabilidad: disponibilidad del servicio, gestión de modelos, ejecución y consulta de inferencias, y lectura de métricas. Gracias a esta organización, ELAN consume únicamente los endpoints que su flujo necesita, mientras que herramientas como Postman o \textbf{curl} sirven de apoyo en la verificación durante las pruebas funcionales.
+
+\begin{table}[H]
 \centering
 \caption{Endpoints de la API REST del middleware}
 \label{tab:endpoints_api}
-\begin{tabular}{|l|l|p{7cm}|}
-\hline
+\small
+\renewcommand{\arraystretch}{1.18}
+\setlength{\tabcolsep}{5pt}
+
+\begin{tabular}{
+    >{\centering\arraybackslash}p{1.6cm}
+    >{\raggedright\arraybackslash}p{5.0cm}
+    >{\raggedright\arraybackslash}p{6.7cm}
+}
+\toprule
 \textbf{Método} & \textbf{Endpoint} & \textbf{Descripción} \\
-\hline
-GET & \texttt{/health} & Verifica disponibilidad del servicio. \\
-GET & \texttt{/api/v1/models} & Lista todos los modelos instalados. \\
-GET & \texttt{/api/v1/models/\{id\}} & Detalle completo de un modelo. \\
-POST & \texttt{/api/v1/models/install} & Instala un modelo desde ZIP (\texttt{multipart/form-data}). \\
-PATCH & \texttt{/api/v1/models/\{id\}/status} & Activa o desactiva un modelo instalado. \\
-POST & \texttt{/api/v1/jobs/segment-video} & Ejecuta una inferencia sobre un video. \\
-GET & \texttt{/api/v1/jobs/\{job\_id\}} & Recupera el resultado de un job ejecutado. \\
-GET & \texttt{/api/v1/metrics} & Métricas acumuladas desde el inicio del servicio. \\
-\hline
+\midrule
+
+\texttt{GET} &
+\texttt{/health} &
+Verifica la disponibilidad general del servicio. \\
+
+\texttt{GET} &
+\texttt{/api/v1/models} &
+Lista todos los modelos instalados en el middleware. \\
+
+\texttt{GET} &
+\texttt{/api/v1/models/\{id\}} &
+Recupera el detalle completo de un modelo específico. \\
+
+\texttt{POST} &
+\texttt{/api/v1/models/install} &
+Instala un modelo a partir de un archivo ZIP enviado como \texttt{multipart/form-data}. \\
+
+\texttt{PATCH} &
+\texttt{/api/v1/models/\{id\}/status} &
+Activa o desactiva un modelo previamente instalado. \\
+
+\texttt{POST} &
+\texttt{/api/v1/jobs/segment-video} &
+Ejecuta una inferencia sobre un video seleccionado. \\
+
+\texttt{GET} &
+\texttt{/api/v1/jobs/\{job\_id\}} &
+Recupera el resultado de un job de inferencia ejecutado. \\
+
+\texttt{GET} &
+\texttt{/api/v1/metrics} &
+Consulta métricas acumuladas desde el inicio del servicio. \\
+
+\bottomrule
 \end{tabular}
 \end{table}
 
-\vspace{1\baselineskip}
+\subsection{Despliegue y configuración del entorno}
 
-\subsubsection{Despliegue y configuración del entorno}
+El despliegue del middleware se realiza con Docker Compose porque el sistema necesita más que un proceso aislado: requiere una red compartida, comunicación con contenedores de modelos creados dinámicamente y persistencia entre reinicios. El archivo \textbf{docker-compose.yml} define el servicio principal, los bind mounts y la red común usada por los backends; su contenido completo, junto con las consideraciones de seguridad sobre el socket de Docker, consta en el Anexo~C. Esta decisión simplifica el arranque del sistema, ya que el usuario puede levantar el servicio con un comando único mientras Compose crea la red, publica el puerto y monta los directorios requeridos.
 
-El middleware se despliega mediante Docker Compose. El archivo \texttt{docker-compose.yml} define el servicio del middleware, la red compartida con los contenedores de modelo y los bind mounts necesarios para la persistencia de datos. La elección de bind mounts sobre volúmenes Docker con nombre para los directorios de datos responde a una consideración de durabilidad: los volúmenes con nombre pueden ser eliminados accidentalmente mediante \texttt{docker compose down -v} o mediante operaciones de limpieza como \texttt{docker volume prune}, mientras que los bind mounts persisten en el sistema de archivos del anfitrión independientemente de las operaciones sobre los recursos Docker.
+Se eligieron bind mounts para los datos persistentes porque dejan los archivos visibles en el sistema del anfitrión. Esto facilita auditar el registro de modelos, revisar manifests de respaldo y conservar información aunque se detengan o eliminen los contenedores. En cambio, los volúmenes con nombre pueden perderse con operaciones de limpieza de Docker, lo que no resulta conveniente para un entorno local de investigación \cite{docker2026overview}.
 
-El middleware monta tres rutas del anfitrión. El directorio \texttt{./data/models\_store} se monta en \texttt{/app/data/models\_store} dentro del contenedor y contiene el archivo \texttt{registry.json} y los archivos extraídos de cada modelo instalado. El directorio \texttt{./data/bootstrap\_manifests} se monta en \texttt{/app/data/bootstrap\_manifests} y contiene las copias de respaldo de los manifests para la recuperación automática. El socket de Docker (\texttt{/var/run/docker.sock}) se monta dentro del contenedor del middleware para que el SDK de Python pueda comunicarse con el demonio de Docker del anfitrión, lo que permite al middleware gestionar otros contenedores —los backends de modelo— desde dentro de su propio contenedor.
+El middleware utiliza tres montajes con responsabilidades distintas. \textbf{./data/models\_store} conserva el registro y los archivos extraídos de los modelos instalados. \textbf{./data/bootstrap\_manifests} guarda copias de manifests para recuperar información mínima si el registro principal se pierde o queda inconsistente. Además, el socket de Docker permite que el SDK de Docker (para Python) construya imágenes, inicie contenedores, inspeccione estados y gestione backends desde el propio middleware \cite{docker_sdk_python}. Así, aunque el orquestador se ejecuta dentro de un contenedor, mantiene control local sobre los contenedores de inferencia.
 
-El Cuadro \ref{tab:variables_entorno} describe las variables de entorno configurables del middleware.
+La Tabla~\ref{tab:variables_entorno} describe las variables configurables del middleware. Estas variables separan la configuración del entorno respecto del código fuente, algo necesario porque cada estación de trabajo puede tener una ruta distinta para videos, diferente capacidad de hardware o distintos requisitos de logging.
 
-\begin{table}[h]
+\begin{table}[H]
 \centering
 \caption{Variables de entorno del middleware}
 \label{tab:variables_entorno}
-\begin{tabular}{|l|l|p{5.5cm}|}
-\hline
+\scriptsize
+\renewcommand{\arraystretch}{1.18}
+\setlength{\tabcolsep}{5pt}
+
+\begin{tabular}{
+    >{\raggedright\arraybackslash}p{4.2cm}
+    >{\raggedright\arraybackslash}p{3.4cm}
+    >{\raggedright\arraybackslash}p{5.8cm}
+}
+\toprule
 \textbf{Variable} & \textbf{Valor por defecto} & \textbf{Descripción} \\
-\hline
-\texttt{MIDDLEWARE\_HOST} & \texttt{0.0.0.0} & Interfaz de escucha dentro del contenedor. \\
-\texttt{MIDDLEWARE\_PORT} & \texttt{8000} & Puerto expuesto al host. \\
-\texttt{MIDDLEWARE\_LOG\_LEVEL} & \texttt{INFO} & Nivel de logging estructurado. \\
-\texttt{MIDDLEWARE\_MODELS\_STORE\_DIR} & \texttt{/app/data/models\_store} & Directorio del registry. \\
-\texttt{MIDDLEWARE\_BOOTSTRAP\_MANIFESTS\_DIR} & \texttt{/app/data/bootstrap\_manifests} & Directorio de manifests de respaldo. \\
-\texttt{MIDDLEWARE\_VIDEOS\_DIR} & (requerido) & Ruta del host donde se encuentran los videos. \\
-\texttt{MIDDLEWARE\_DOCKER\_NETWORK} & \texttt{elan-ai-shared} & Red Docker compartida con los backends. \\
-\texttt{MIDDLEWARE\_MAX\_CONCURRENT\_JOBS} & \texttt{1} & Límite de inferencias simultáneas. \\
-\hline
+\midrule
+
+\texttt{MIDDLEWARE\_HOST} &
+\texttt{0.0.0.0} &
+Interfaz de escucha dentro del contenedor. \\
+
+\texttt{MIDDLEWARE\_PORT} &
+\texttt{8000} &
+Puerto expuesto al host. \\
+
+\texttt{MIDDLEWARE\_LOG\_LEVEL} &
+\texttt{INFO} &
+Nivel de logging estructurado. \\
+
+\texttt{MIDDLEWARE\_MODELS\_}\newline
+\texttt{STORE\_DIR} &
+\texttt{/app/data/}\newline
+\texttt{models\_store} &
+Directorio donde se almacena el registry de modelos. \\
+
+\texttt{MIDDLEWARE\_BOOTSTRAP\_}\newline
+\texttt{MANIFESTS\_DIR} &
+\texttt{/app/data/bootstrap/}\newline
+\texttt{manifests} &
+Directorio persistente para los manifests de respaldo. \\
+
+\texttt{MIDDLEWARE\_VIDEOS\_DIR} &
+\textit{requerido} &
+Ruta del host donde se encuentran los videos disponibles para inferencia. \\
+
+\texttt{MIDDLEWARE\_DOCKER\_}\newline
+\texttt{NETWORK} &
+\texttt{elan-ai-shared} &
+Red Docker compartida entre el middleware y los backends de los modelos. \\
+
+\texttt{MIDDLEWARE\_MAX\_}\newline
+\texttt{CONCURRENT\_JOBS} &
+\texttt{1} &
+Límite de inferencias simultáneas permitidas por el middleware. \\
+
+\bottomrule
 \end{tabular}
 \end{table}
 
-La variable \texttt{MIDDLEWARE\_VIDEOS\_DIR} es la única requerida sin valor por defecto, ya que su valor es inherentemente dependiente del sistema donde se despliega. Esta variable debe contener la ruta del directorio del anfitrión donde el investigador almacena sus videos de LSEc. El middleware la pasa directamente al SDK de Docker como fuente del bind mount, sin ninguna transformación de ruta, para evitar el problema descrito en la Fase 3.
+La variable \textbf{MIDDLEWARE\_VIDEOS\_DIR} es la única requerida sin valor por defecto porque depende del equipo donde se despliega el sistema. Debe apuntar al directorio del anfitrión que contiene los videos de LSEc disponibles para inferencia. El middleware no intenta inferir esta ruta: la entrega al SDK de Docker como fuente del bind mount usado por los contenedores de modelo. Esta decisión evita transformaciones ambiguas entre sistemas operativos y se relaciona con el problema resuelto en la Fase 3, donde ELAN trabaja con rutas del anfitrión y el backend con rutas internas del contenedor.
 
-Para levantar el sistema por primera vez o después de cambios en el código, se ejecutan los siguientes comandos:
+Para levantar el sistema por primera vez, o después de cambios en el código, se ejecutan los comandos mostrados a continuación. El primer comando construye la imagen del middleware y deja el servicio en segundo plano; el segundo verifica que el endpoint de salud responda antes de instalar modelos o ejecutar inferencias:
 
-\begin{verbatim}
+\begin{center}
+\begin{minipage}{0.78\textwidth}
+\hrule
+\vspace{0.10cm}
+\footnotesize
+\begin{Verbatim}[baselinestretch=0.78]
 # Desde el directorio middleware/
 docker compose up --build -d
 
 # Verificar que el servicio está activo
 curl http://localhost:8000/health
-\end{verbatim}
+\end{Verbatim}
+\vspace{0.03cm}
+\hrule
 
-La integración con ELAN requiere compilar los archivos Java modificados con la herramienta de construcción del proyecto ELAN (Maven o Ant, según la versión) e instalar el JAR resultante o los archivos \texttt{.class} en el directorio de clases de ELAN. Una vez instalados, el reconocedor \textit{AI Orchestration Middleware} aparece disponible en la lista de reconocedores accesibles desde el menú de ELAN, en la misma ubicación que otros reconocedores basados en el protocolo AVATecH.
+\captionof{listing}{Comandos iniciales para desplegar y verificar el middleware}
+\label{lst:comandos_despliegue_middleware}
+\end{minipage}
+\end{center}
+
+La integración con ELAN requiere compilar el árbol fuente modificado con Maven e incorporar el JAR resultante a la instalación de la herramienta; el procedimiento paso a paso, incluido el registro del reconocedor mediante el mecanismo SPI de Java, se describe en el Anexo~D. Esta integración no reemplaza el flujo de anotación existente; añade un reconocedor dentro del mecanismo de extensión previsto por AVATecH \cite{auer2014avatech}. Una vez instalado, el reconocedor \textit{AI Orchestration Middleware} aparece en la lista de reconocedores de ELAN y permite seleccionar modelo, configurar el nivel de anotación destino y ejecutar inferencias sin manipular directamente los contenedores Docker.
 
 \vspace{1\baselineskip}
 
-\subsubsection{Estructura de directorios del sistema}
+\subsection{Estructura de directorios del sistema}
 
-La Figura \ref{fig:estructura_directorios} muestra la organización de directorios del middleware, que refleja la separación de responsabilidades adoptada en el diseño. La estructura visible en el sistema de archivos es el resultado directo de las decisiones arquitectónicas tomadas en cada fase: la capa \texttt{api/} corresponde a las responsabilidades de recepción de solicitudes y serialización de respuestas, la capa \texttt{services/} corresponde a la lógica de negocio, y la capa \texttt{runners/} corresponde a la abstracción del mecanismo de ejecución.
+El Listado~\ref{lst:estructura_directorios} muestra cómo se organizó el middleware para reflejar la separación de responsabilidades definida en el diseño. La capa \textbf{api/} recibe solicitudes HTTP y serializa respuestas; \textbf{core/} centraliza configuración y logging; \textbf{schemas/} contiene los modelos Pydantic que hacen ejecutables los contratos; \textbf{services/} agrupa la lógica de instalación, registro, jobs, Docker, cola y métricas; \textbf{runners/} abstrae el mecanismo de ejecución; \textbf{storage/} conserva jobs en memoria durante la sesión; y \textbf{data/} mantiene información persistente mediante bind mounts.
 
-\begin{figure}[h]
-\centering
-\begin{verbatim}
+\begin{center}
+\begin{minipage}{0.96\textwidth}
+\hrule
+\vspace{0.10cm}
+\scriptsize
+\begin{Verbatim}[baselinestretch=0.72]
 middleware/
-├── app/
-│   ├── main.py                      ← FastAPI: inicio, routers, error handlers
-│   ├── api/
-│   │   ├── routes_health.py         ← GET /health
-│   │   ├── routes_models.py         ← CRUD modelos + instalación
-│   │   ├── routes_jobs.py           ← POST /jobs/segment-video
-│   │   └── routes_metrics.py        ← GET /metrics
-│   ├── core/
-│   │   ├── config.py                ← Variables de entorno → Settings
-│   │   └── logging_config.py        ← Logging estructurado
-│   ├── runners/
-│   │   ├── base_runner.py           ← Clase abstracta BaseRunner
-│   │   ├── docker_runner.py         ← DockerRunner (runtime activo)
-│   │   └── runner_selector.py       ← Selección de runner por manifest
-│   ├── schemas/                     ← Contratos Pydantic
-│   ├── services/
-│   │   ├── model_registry_service.py← Instalar, registrar, gestionar modelos
-│   │   ├── job_service.py           ← Orquestar inferencia completa
-│   │   ├── docker_service.py        ← Wrapper del SDK Docker
-│   │   ├── docker_lifecycle_service.py← Build + start + health en instalación
-│   │   ├── job_queue.py             ← Cola FIFO + control concurrencia
-│   │   └── metrics_service.py       ← Contadores thread-safe
-│   └── storage/
-│       └── memory_store.py          ← Jobs en memoria (por sesión)
-├── data/
-│   ├── models_store/                ← Registry + archivos de modelos
-│   └── bootstrap_manifests/         ← Manifests de respaldo para recuperación
-├── Dockerfile                       ← Imagen del middleware
-├── docker-compose.yml               ← Orquestación del despliegue
-└── requirements.txt                 ← Dependencias Python
-\end{verbatim}
-\caption{Estructura de directorios del middleware}
-\label{fig:estructura_directorios}
-\end{figure}
+|-- app/
+|   |-- main.py                    (FastAPI: inicio, routers, error handlers)
+|   |-- api/
+|   |   |-- routes_health.py       (GET /health)
+|   |   |-- routes_models.py       (CRUD modelos e instalación)
+|   |   |-- routes_jobs.py         (POST /jobs/segment-video)
+|   |   `-- routes_metrics.py      (GET /metrics)
+|   |-- core/
+|   |   |-- config.py              (Variables de entorno -> Settings)
+|   |   `-- logging_config.py      (Logging estructurado)
+|   |-- runners/
+|   |   |-- base_runner.py         (Clase abstracta BaseRunner)
+|   |   |-- docker_runner.py       (DockerRunner: runtime activo)
+|   |   `-- runner_selector.py     (Selección de runner por manifest)
+|   |-- schemas/                   (Contratos Pydantic)
+|   |-- services/
+|   |   |-- model_registry_service.py  (Instalar y gestionar modelos)
+|   |   |-- job_service.py             (Orquestar inferencia completa)
+|   |   |-- docker_service.py          (Wrapper del SDK Docker)
+|   |   |-- docker_lifecycle_service.py (Build, start y comprobación de disponibilidad)
+|   |   |-- job_queue.py               (Cola FIFO y concurrencia)
+|   |   `-- metrics_service.py         (Contadores thread-safe)
+|   `-- storage/
+|       `-- memory_store.py        (Jobs en memoria por sesión)
+|-- data/
+|   |-- models_store/              (Registry y archivos de modelos)
+|   `-- bootstrap_manifests/       (Manifests de respaldo)
+|-- Dockerfile                     (Imagen del middleware)
+|-- docker-compose.yml             (Orquestación del despliegue)
+`-- requirements.txt               (Dependencias Python)
+\end{Verbatim}
+\vspace{0.03cm}
+\hrule
 
-Los archivos Java añadidos al código fuente de ELAN se ubican en el paquete \texttt{mpi.eudico.client.annotator.recognizer.ai}, que fue creado como subpaquete del paquete de reconocedores existente. Esta ubicación respeta la convención de nombres del proyecto ELAN y garantiza que el nuevo código queda lógicamente asociado con el resto de la capa de reconocedores.
+\captionof{listing}{Estructura de directorios del middleware}
+\label{lst:estructura_directorios}
+\end{minipage}
+\end{center}
 
-\begin{verbatim}
+Los archivos Java añadidos a ELAN se ubicaron en el paquete \textbf{mpi.eudico.client.annotator.recognizer.ai}, como subpaquete del módulo de reconocedores. Esta ubicación mantiene el nuevo código cerca del punto de extensión AVATecH y, al mismo tiempo, separa la integración con IA de los reconocedores previos. El Listado~\ref{lst:estructura_clases_elan} muestra esta organización, donde el cliente HTTP, el reconocedor, el panel, el diálogo de modelos y los DTO principales quedan agrupados de forma explícita; el inventario completo de clases y DTO consta en el Anexo~D.
+
+\begin{center}
+\begin{minipage}{0.96\textwidth}
+\hrule
+\vspace{0.10cm}
+\scriptsize
+\begin{Verbatim}[baselinestretch=0.72]
 src/main/java/mpi/eudico/client/annotator/recognizer/ai/
-├── AIOrchestrationMiddlewareClient.java   ← cliente HTTP del middleware
-├── AIOrchestrationMiddlewareException.java← excepción con HTTP status + body
-├── AIOrchestrationRecognizer.java         ← recognizer AVATecH
-├── AIOrchestrationRecognizerPanel.java    ← panel de configuración en ELAN
-├── AIModelManagerDialog.java              ← diálogo de gestión de modelos
-└── dto/
-    ├── ModelSummary.java                  ← resumen de modelo (lista)
-    ├── InstalledModelDetail.java          ← detalle completo con UI config
-    ├── ModelUiConfig.java                 ← configuración UI del modelo
-    ├── SegmentVideoRequest.java           ← solicitud de inferencia
-    └── SegmentVideoResponse.java          ← respuesta con segmentos
-\end{verbatim}
+|-- AIOrchestrationMiddlewareClient.java    (cliente HTTP del middleware)
+|-- AIOrchestrationMiddlewareException.java (excepción con HTTP status y body)
+|-- AIOrchestrationRecognizer.java          (reconocedor AVATecH)
+|-- AIOrchestrationRecognizerPanel.java     (panel de configuración en ELAN)
+|-- AIModelManagerDialog.java               (diálogo de gestión de modelos)
+`-- dto/
+    |-- ModelSummary.java                   (resumen de modelo para lista)
+    |-- InstalledModelDetail.java           (detalle completo con UI config)
+    |-- ModelUiConfig.java                  (configuración UI del modelo)
+    |-- SegmentVideoRequest.java            (solicitud de inferencia)
+    `-- SegmentVideoResponse.java           (respuesta con segmentos)
+\end{Verbatim}
+\vspace{0.03cm}
+\hrule
+
+\captionof{listing}{Estructura de clases Java integradas en ELAN}
+\label{lst:estructura_clases_elan}
+\end{minipage}
+\end{center}
 
 \vspace{1\baselineskip}
 
-\subsubsection{Guía de replicación: creación de un nuevo backend de modelo}
+\subsection{Guía de replicación: creación de un nuevo backend de modelo}
 
-Una de las propiedades centrales del sistema es su capacidad de integrar nuevos modelos sin modificar el código del middleware ni de ELAN. Para que un investigador o desarrollador pueda agregar un nuevo modelo de IA, debe producir un paquete ZIP que cumpla el contrato de instalación descrito en la Fase 2. Este proceso sigue los pasos descritos a continuación.
+Una propiedad central del sistema es que admite nuevos modelos sin modificar el código de ELAN ni del middleware. Para lograrlo, cada modelo empaqueta su propia variabilidad: dependencias, artefactos, configuración, forma de ejecución y contrato HTTP. Si el paquete ZIP cumple el contrato descrito en la Fase 2 y detallado en el Anexo~A, el middleware puede instalarlo, construir su imagen, iniciar el contenedor y mostrarlo en ELAN con el mismo flujo usado por los modelos ya validados.
 
-El primer paso es implementar el backend del modelo como un servicio HTTP basado en FastAPI (o cualquier otro framework) que exponga los endpoints \texttt{GET /health} y \texttt{POST /infer}. El endpoint \texttt{GET /health} debe responder HTTP 200 con un cuerpo JSON cuando el modelo está listo para recibir solicitudes de inferencia; su propósito es señalizar al middleware que el contenedor completó su fase de inicialización, que puede incluir la carga de los pesos del modelo en memoria. El endpoint \texttt{POST /infer} debe aceptar el payload de inferencia con el esquema descrito en la sección de contratos de comunicación y responder con un JSON que incluya los campos \texttt{output\_type}, \texttt{media\_info} y \texttt{segments}. Cada segmento debe tener como mínimo \texttt{start\_ms}, \texttt{end\_ms} y \texttt{label}; los campos \texttt{confidence} y \texttt{predictions} son opcionales.
+El primer paso es implementar el backend como un servicio HTTP que exponga los endpoints requeridos. Puede usarse FastAPI u otro framework, porque el middleware no depende de la implementación interna del modelo; solo necesita que el contenedor cumpla el contrato. \textbf{GET /health} debe responder HTTP 200 únicamente cuando el pipeline esté listo para inferir, ya que un contenedor iniciado no siempre significa que pesos, vocabularios o recursos de visión artificial estén cargados. \textbf{POST /infer} debe aceptar el payload definido en la sección de contratos y responder con \textbf{output\_type}, \textbf{media\_info} y \textbf{segments}. Cada segmento debe incluir al menos \textbf{start\_ms}, \textbf{end\_ms} y \textbf{label}; los campos \textbf{confidence} y \textbf{predictions} pueden añadirse cuando el modelo entregue evidencia adicional.
 
-El segundo paso es empaquetar el backend junto con sus pesos y configuración en la estructura de directorios requerida por el middleware, con el \texttt{manifest.json} en la raíz. El \texttt{Dockerfile} del backend debe especificar cómo instalar las dependencias del modelo —que pueden incluir PyTorch, TensorFlow, MediaPipe u otras bibliotecas de IA— y cómo iniciar el servicio. Los artefactos del modelo (pesos, vocabularios, archivos de configuración) deben declararse en la sección \texttt{artifacts} del manifest con rutas relativas dentro del paquete ZIP.
+El segundo paso es empaquetar el backend con sus pesos y configuración, colocando \textbf{manifest.json} en la raíz del paquete. Este manifest identifica el modelo, su versión, los artefactos requeridos y la forma de construir y ejecutar el backend. El \textbf{Dockerfile} debe instalar las dependencias necesarias y definir cómo inicia el servicio HTTP. Esta encapsulación permite aislar bibliotecas de IA potencialmente incompatibles con ELAN o con otros modelos, manteniendo el principio de contenedorización de la arquitectura \cite{docker2026overview}. Los artefactos, como pesos, vocabularios y archivos de configuración, se declaran con rutas relativas dentro del ZIP para que el paquete pueda instalarse en distintos equipos.
 
-El tercer paso es comprimir la estructura de directorios en un archivo ZIP, asegurándose de que el \texttt{manifest.json} quede en la raíz del ZIP (no dentro de un subdirectorio). En Windows PowerShell, el comando correcto es:
+El tercer paso es comprimir la estructura de directorios en un ZIP, cuidando que \textbf{manifest.json} quede en la raíz y no dentro de un subdirectorio adicional. Esta condición permite que el instalador valide el contrato antes de extraer y construir el backend. En Windows PowerShell, el comando correcto es:
 
-\begin{verbatim}
+\begin{center}
+\begin{minipage}{0.78\textwidth}
+\hrule
+\vspace{0.08cm}
+\footnotesize
+\begin{Verbatim}[baselinestretch=0.78]
 cd carpeta_que_contiene_el_paquete\
 Compress-Archive -Path nombre_paquete\* -DestinationPath modelo.zip
-\end{verbatim}
+\end{Verbatim}
+\vspace{0.03cm}
+\hrule
 
-El cuarto y último paso es instalar el paquete mediante el endpoint \texttt{POST /api/v1/models/install} del middleware, o desde la interfaz de ELAN mediante el botón "Instalar ZIP" del diálogo de gestión de modelos. Si el paquete cumple todos los criterios de validación y el Dockerfile se construye correctamente, el modelo quedará instalado, el contenedor se iniciará automáticamente, y el modelo estará disponible para selección en el panel del reconocedor de ELAN sin ningún paso adicional.
+\captionof{listing}{Comando PowerShell para comprimir un paquete de modelo}
+\label{lst:comprimir_modelo_zip}
+\end{minipage}
+\end{center}
 
-Este diseño de cuatro pasos garantiza que el esfuerzo de integración de un nuevo modelo se concentra completamente en la implementación del backend, sin requerir ningún conocimiento del código interno del middleware o de ELAN. La única interfaz que el desarrollador del backend debe conocer y respetar es el contrato HTTP de los dos endpoints (\texttt{/health} e \texttt{/infer}) y el esquema del \texttt{manifest.json}, ambos documentados de forma estable en la sección de contratos de comunicación y en la guía técnica del proyecto.
+El cuarto paso es instalar el paquete mediante \textbf{POST /api/v1/models/install} o desde ELAN con el botón \textit{Instalar ZIP}. En ambos casos, el flujo técnico es el mismo: el middleware recibe el ZIP como \textbf{multipart/form-data}, localiza y valida el manifest, verifica artefactos, extrae el paquete, actualiza el registro, construye la imagen Docker y ejecuta las comprobaciones de arranque. Si todo es correcto, el modelo queda instalado, el contenedor se inicia y aparece disponible en el panel del reconocedor.
 
-\vspace{1\baselineskip}
-
-\subsubsection{Cumplimiento de los objetivos específicos}
-
-A continuación se describe de forma explícita qué actividades se realizaron para cumplir cada uno de los objetivos específicos planteados en el proyecto, identificando en qué fases del proceso de desarrollo se ejecutaron y qué evidencia respalda su cumplimiento.
-
-\paragraph{Objetivo 1: Analizar el protocolo AVATecH para definir los contratos de interfaz del sistema de orquestación.}
-
-Este objetivo se cumplió mediante el análisis documental de la especificación técnica de AVATecH \cite{auer2014avatech} y la ingeniería inversa del código Java de ELAN, ambas actividades realizadas en la fase de análisis y diseño previa a la implementación. Se identificaron las interfaces \texttt{Recognizer2} e \texttt{IncrementalRecognizer} como los puntos de extensión de ELAN, se determinó el mecanismo de comunicación de parámetros mediante \texttt{setParameterValue()}, el formato de retorno de resultados mediante \texttt{Segmentation} y \texttt{Segment}, y las restricciones del cliente HTTP disponible en Java 11. A partir de este análisis se tomó la decisión de implementar la integración como un reconocedor Java interno, y se definieron los contratos de entrada y salida del middleware. Como resultado tangible, se diseñó el esquema JSON de solicitud de inferencia, el formato de respuesta con segmentos temporales, y el formato del \texttt{manifest.json} que debe acompañar a cada paquete de modelo. Estos contratos fueron implementados como modelos Pydantic en el middleware y como clases DTO en el cliente Java, garantizando validación automática en ambos extremos de la comunicación.
-
-\paragraph{Objetivo 2: Implementar el núcleo del orquestador con mecanismos de IPC, gestor de colas y asignación dinámica de recursos de memoria.}
-
-Este objetivo fue cumplido mediante las actividades de las fases 1, 2, 3 y 4 del proceso de desarrollo. La comunicación entre procesos (IPC) se implementó mediante la API REST del middleware, que actúa como punto de encuentro entre el cliente Java de ELAN y los backends Python contenerizados de los modelos. La Fase 1 estableció el servidor HTTP con sus módulos de configuración y logging. La Fase 2 implementó el subsistema de registro e instalación de modelos, incluyendo el mecanismo de bootstrap manifests para la recuperación automática del estado. La Fase 3 implementó el \texttt{DockerRunner} con el ciclo completo de gestión de contenedores y la traducción de rutas de video. La Fase 4 añadió el gestor de colas FIFO que controla la concurrencia de inferencias y actúa como mecanismo implícito de asignación de recursos de GPU, junto con el servicio de métricas y la diferenciación del estado \texttt{TIMEOUT}. La variable de entorno \texttt{MIDDLEWARE\_MAX\_CONCURRENT\_JOBS} permite ajustar el número máximo de inferencias simultáneas sin modificar el código del middleware, lo que hace configurable el equilibrio entre rendimiento y consumo de recursos según las características del hardware disponible.
-
-\paragraph{Objetivo 3: Desarrollar un pipeline de procesamiento de video que integre extracción de puntos de referencia corporales, segmentación temporal mediante BiLSTM con esquema BIO y clasificación de glosas mediante Transformer.}
-
-Este objetivo corresponde al backend del modelo de IA, implementado dentro del contenedor Docker \texttt{lsec-bio-gloss-final:1.0.0} distribuido como parte del paquete \texttt{lsec\_bio\_gloss\_final\_v1.zip}. El pipeline procesa el video mediante la extracción de puntos de referencia corporales y de manos con MediaPipe \cite{lugaresi2019mediapipe}, convirtiendo cada fotograma en un vector de 356 características que representa la posición de los puntos anatómicos clave. Estos vectores se procesan mediante un modelo BiLSTM con esquema BIO \cite{ramshaw1995text_chunking}, que produce para cada fotograma una etiqueta de segmentación: B para el inicio de una seña, I para la continuación, y O para un intervalo sin seña. Las transiciones B-I son decodificadas en segmentos temporales con marcas de inicio y fin en milisegundos, que son clasificados por un modelo Transformer \cite{vaswani2017attention} entrenado sobre el vocabulario de glosas LSEc disponible. El postprocesamiento convierte la salida del Transformer en un ranking de predicciones con sus probabilidades. El middleware no ejecuta este pipeline directamente; lo invoca mediante el endpoint \texttt{POST /infer} del contenedor, respetando el contrato de comunicación definido en la Fase 2, lo que garantiza que el pipeline puede ser actualizado o reemplazado sin modificar el middleware.
-
-\paragraph{Objetivo 4: Validar el desempeño técnico del sistema mediante pruebas de carga, midiendo latencia de comunicación y evaluando la correcta recuperación ante fallos de los modelos.}
-
-Este objetivo fue cumplido en la Fase 6 mediante la ejecución de los escenarios de prueba funcionales e internos del plan de validación. La latencia de comunicación fue medida mediante el campo \texttt{exec\_ms} de las respuestas de inferencia y mediante el endpoint \texttt{GET /api/v1/metrics}, que mantiene la latencia promedio y la latencia del último job completado. Las pruebas de carga consistieron en la ejecución de dos jobs simultáneos para verificar el comportamiento de la cola de concurrencia. La recuperación ante fallos fue verificada mediante los escenarios de error: middleware detenido (sin crash de ELAN), contenedor del modelo detenido (recreación automática en la siguiente inferencia), timeout forzado (respuesta HTTP 504 sin bloqueo del servicio), y pérdida del registry (recuperación mediante bootstrap manifests tras reiniciar el middleware). El consumo de recursos fue medido mediante \texttt{docker stats} durante inferencias en condiciones controladas, capturando el CPU\% y el uso de RAM de ambos contenedores simultáneamente.
+Este proceso concentra el esfuerzo de integración en el backend y en la preparación correcta del paquete. El desarrollador no necesita conocer el código interno de ELAN ni del middleware; debe respetar el contrato de \textbf{/health}, \textbf{/infer} y \textbf{manifest.json}. Con ello se conserva el desacoplamiento de la arquitectura: ELAN no conoce las bibliotecas del modelo, el middleware no interpreta la lógica interna del pipeline y el backend no manipula archivos EAF ni estructuras propias de ELAN.
 
 \vspace{1\baselineskip}
 
-En conjunto, las seis fases descritas en este capítulo materializan de forma concreta y verificable los principios teóricos expuestos en el marco teórico: la separación de responsabilidades entre ELAN y el middleware se traduce en módulos de servicio con interfaces definidas; el diseño por contratos se traduce en modelos Pydantic y esquemas JSON; la contenedorización se traduce en la arquitectura de red Docker compartida y el ciclo de vida gestionado por \texttt{DockerRunner}; y la orquestación se traduce en la máquina de estados del job, la cola FIFO y el servicio de métricas. El capítulo de resultados y validación documentará la evidencia empírica de que cada uno de estos componentes funciona correctamente en las condiciones de uso para las que fue diseñado.
+\subsection{Uso ético de herramientas de inteligencia artificial generativa}
+
+El presente Trabajo de Integración Curricular es de autoría propia. Durante su desarrollo se utilizaron de manera ética y responsable herramientas de inteligencia artificial generativa (ChatGPT y Claude) como apoyo técnico, en concordancia con las orientaciones internacionales sobre el uso de esta tecnología en contextos de investigación \cite{unesco2023guidance}.
+
+Su aporte principal se dio en la etapa de ingeniería inversa del código fuente de ELAN 7.1. Dado que la herramienta carece de documentación interna detallada sobre su mecanismo de reconocedores, estas herramientas se emplearon para analizar el paquete \textbf{mpi.eudico.client.annotator.recognizer}, ubicar los puntos de extensión del protocolo AVATecH y orientar la forma de implementar las interfaces requeridas, como \textbf{Recognizer2}, \textbf{IncrementalRecognizer} y la comunicación mediante \textbf{RecognizerHost}. También sirvieron de apoyo puntual para interpretar errores de integración durante las pruebas y para revisar fragmentos repetitivos de código del prototipo.
+
+Si bien la asistencia de IA facilitó la comprensión inicial de un código fuente extenso y ajeno, cada sugerencia debió verificarse contra el código real de ELAN 7.1 y la especificación de AVATecH, ajustarse al comportamiento observado durante las pruebas de integración y, en varios casos, descartarse por no corresponder a la versión utilizada de la herramienta. Este ejercicio de contraste fortaleció mis habilidades de lectura de código de terceros, diseño de integraciones entre tecnologías heterogéneas y análisis crítico de los resultados generados por estas herramientas.
+
+Las decisiones metodológicas, los ajustes técnicos, la validación de resultados y las conclusiones corresponden exclusivamente a mi autoría.

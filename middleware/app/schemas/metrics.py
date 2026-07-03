@@ -1,3 +1,12 @@
+"""
+StageMetrics — desglose de latencia por etapa de una inferencia.
+
+Se reporta dentro de ``trace.stages`` en la respuesta del job. Combina las
+etapas del orquestador (validation_ms, queue_ms, container_start_ms,
+healthcheck_ms, docker_inference_ms, postprocessing_ms, total_ms) con las
+etapas internas que el backend del modelo puede informar (extracción de
+keypoints, carga de pesos, inferencia BIO, clasificación de glosas, etc.).
+"""
 from pydantic import BaseModel, Field
 
 

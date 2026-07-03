@@ -3,21 +3,24 @@
 ## Justificación académica
 
 Esta fase cierra la brecha entre la implementación técnica del middleware y
-los objetivos explícitos de la tesis:
+los objetivos explícitos del TIC:
 
-> **Objetivo específico 2:** "...haciendo uso de **algoritmos de gestión de
-> colas** y **asignación dinámica de memoria VRAM** para asegurar la
-> **estabilidad del sistema** durante la inferencia de modelos pesados."
+> **Objetivo específico 2:** "Codificar el núcleo del orquestador de servicios
+> utilizando Python y tecnologías de virtualización ligera (Docker), haciendo
+> uso de **mecanismos de control de concurrencia** y gestión del ciclo de vida
+> de los contenedores para asegurar la **estabilidad del sistema** durante la
+> inferencia simultánea de modelos."
 
-> **Objetivo específico 3:** "Validar el desempeño técnico mediante **pruebas
-> de carga**, midiendo **latencia de comunicación** y la correcta
-> **recuperación de errores** ante fallos de los modelos."
+> **Objetivo específico 3:** "Validar el desempeño técnico del middleware
+> mediante **pruebas de carga** en escenarios de anotación de LSEc, midiendo
+> **latencia de comunicación** y la correcta **recuperación de errores**
+> presentados durante fallos de los modelos."
 
 Los tres componentes implementados responden directamente a esos objetivos:
 
-| Componente | Objetivo de tesis que satisface |
+| Componente | Objetivo del TIC que satisface |
 |---|---|
-| Cola FIFO con límite de concurrencia | Objetivo 2: gestión de colas + VRAM |
+| Cola FIFO con límite de concurrencia | Objetivo 2: control de concurrencia y estabilidad |
 | `GET /api/v1/metrics` | Objetivo 3: medición de latencia y errores |
 | Estado `TIMEOUT` diferenciado | Objetivo 3: recuperación de errores |
 
@@ -57,20 +60,20 @@ Job A termina →  despierta Job B (popleft)
 Job B termina →  despierta Job C (popleft)
 ```
 
-### VRAM como mecanismo de control de VRAM
+### La cola como mecanismo indirecto de control de recursos
 
-Cada backend de modelo Docker carga sus pesos en GPU en el momento de
-inferencia.  Limitar a N jobs simultáneos equivale a limitar a N modelos
-cargados en GPU al mismo tiempo.
+Cada backend de modelo Docker carga sus pesos en memoria (RAM o VRAM) al
+momento de la inferencia.  Limitar a N jobs simultáneos equivale a limitar
+a N modelos cargados al mismo tiempo.
 
 Con `max_concurrent_jobs=1` (valor por defecto), solo un backend puede
-inferir a la vez, garantizando que la GPU no sea saturada por múltiples
-cargas de pesos concurrentes.
+inferir a la vez, evitando que múltiples cargas de pesos concurrentes
+saturen la memoria del equipo.
 
-Esto es lo que el objetivo específico 2 denomina "asignación dinámica de
-memoria VRAM": el middleware controla dinámicamente cuántos procesos de
-inferencia pesada pueden coexistir, sin necesidad de inspeccionar VRAM
-directamente (lo cual dependería del hardware y del driver GPU).
+Así se materializa el "control de concurrencia" del objetivo específico 2:
+el middleware regula cuántos procesos de inferencia pesada pueden coexistir,
+sin necesidad de inspeccionar la memoria directamente (lo cual dependería
+del hardware y del driver de GPU).
 
 ### Integración con FastAPI / uvicorn
 

@@ -1,3 +1,12 @@
+"""
+Contratos internos entre JobService y los runners.
+
+``InferenceInput`` reúne todo lo que un runner necesita para ejecutar
+(identidad del modelo, ruta del video, timeout, artefactos, sección
+``container`` del manifest); ``InferenceOutput`` normaliza lo que el backend
+devuelve (segmentos, media_info, métricas por etapa y traza del runner).
+Son contratos internos: no se exponen por la API.
+"""
 from typing import Any, Dict, Literal
 
 from pydantic import BaseModel, ConfigDict, Field

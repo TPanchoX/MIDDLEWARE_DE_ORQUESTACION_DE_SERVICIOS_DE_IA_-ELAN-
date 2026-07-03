@@ -5,11 +5,12 @@
 El registry de modelos permite **instalar, validar, listar y gestionar** modelos desde paquetes ZIP. Cada paquete contiene un `manifest.json` que declara metadatos, artefactos y configuración del backend Docker.
 
 Al instalar un paquete:
-1. El middleware extrae el ZIP y valida el manifest.
-2. Construye la imagen Docker del backend (`docker build`).
-3. Arranca el contenedor y espera que el health check devuelva 200.
-4. Registra el modelo en el archivo `registry.json` del volumen.
-5. Si cualquier paso falla, hace rollback completo (elimina archivos e imagen).
+1. El middleware valida el ZIP, lee el `manifest.json` (aceptando un prefijo de carpeta raíz) y verifica los artefactos declarados.
+2. Extrae el paquete a `installed/{model_id}/{version}/` y lo registra en `registry.json`.
+3. Construye la imagen Docker del backend (`docker build`) y arranca el contenedor en la red `elan-ai-shared`.
+4. Espera a que el health check del backend devuelva 200 (hasta `backend_config.startup_timeout_sec`).
+5. Guarda una copia del manifest en `data/bootstrap_manifests/` para recuperación automática.
+6. Si el build, el arranque o el health check fallan, hace **rollback**: elimina la entrada del registry y el directorio extraído (la imagen Docker parcialmente construida puede quedar y se limpia con `docker rmi`). El error se devuelve como HTTP 400 `MODEL_PACKAGE_INVALID` con el detalle del fallo.
 
 ---
 
@@ -17,12 +18,12 @@ Al instalar un paquete:
 
 ### En producción (Docker Compose)
 
-El registry real vive en el **volumen Docker** `middleware_models`, montado en `/app/data/models_store` dentro del contenedor. Este volumen **persiste entre reinicios** del middleware.
+El registry vive en el **bind mount** `./data/models_store` del host, montado en `/app/data/models_store` dentro del contenedor. Al ser un directorio del host, **persiste entre reinicios** e incluso ante `docker compose down -v` o `docker volume prune`.
 
 ```
-Volumen Docker middleware_models
-└── /app/data/models_store/
-    ├── registry.json             ← índice de modelos instalados
+./data/models_store/                  (host)  →  /app/data/models_store/  (contenedor)
+├── registry.json                     ← índice de modelos instalados
+└── installed/
     └── lsec_bio_gloss_final_v1/
         └── 1.0.0/
             ├── manifest.json
@@ -31,6 +32,10 @@ Volumen Docker middleware_models
             ├── config/
             └── backend/
 ```
+
+### Manifests de respaldo (bootstrap)
+
+Además del registry, cada instalación guarda una copia del manifest en `./data/bootstrap_manifests/` con el nombre `<model_id>__<version>.json` (método `_save_bootstrap_manifest()`). Al arrancar, `ModelRegistryService._bootstrap_docker_manifests()` escanea ese directorio y re-registra automáticamente cualquier modelo Docker ausente del `registry.json`. Esto permite recuperar el registro si el archivo principal se corrompe o se elimina.
 
 ### Comandos útiles para inspeccionar el registry
 
@@ -41,12 +46,18 @@ curl http://localhost:8000/api/v1/models
 # Ver el registry JSON directamente en el volumen:
 docker exec elan-ai-middleware cat /app/data/models_store/registry.json
 
-# Resetear el registry (vaciar — los contenedores de modelo no se eliminan):
+# Resetear el registry (vaciar — los contenedores de modelo no se eliminan).
+# ⚠️ Borrar también los bootstrap manifests, o el modelo se re-registrará al reiniciar:
 docker exec elan-ai-middleware sh -c 'echo "{\"models\":[]}" > /app/data/models_store/registry.json'
+docker exec elan-ai-middleware sh -c 'rm -f /app/data/bootstrap_manifests/*.json'
 
-# Eliminar el volumen completo (⚠️ destruye todos los modelos instalados):
-docker compose down -v
+# Eliminar por completo un modelo instalado (archivos + contenedor + imagen):
+docker exec elan-ai-middleware rm -rf /app/data/models_store/installed/<model_id>
+docker rm -f elan-ai-model-<model_id>-<version>
+docker rmi <imagen>:<tag>
 ```
+
+> Nota: `docker compose down -v` **no** elimina los modelos, porque `./data/` es un bind mount del host, no un volumen con nombre.
 
 ---
 
@@ -210,38 +221,41 @@ Al recibir el ZIP, el middleware valida en orden:
 ```
 POST /api/v1/models/install (multipart ZIP)
 │
-├── 1. Recibir y guardar ZIP temporal
-├── 2. Abrir ZIP y detectar prefijo de carpeta
-├── 3. Leer manifest.json (con o sin prefijo)
-├── 4. Validar manifest contra schema Pydantic
-├── 5. Verificar que todos los artifacts existen en el ZIP
+├── 1. Abrir ZIP en memoria y validar que contiene archivos
+├── 2. Detectar prefijo de carpeta raíz (ZIP de Explorer/Compress-Archive)
+├── 3. Leer manifest.json (con o sin prefijo; acepta BOM UTF-8)
+├── 4. Validar manifest contra el schema Pydantic (ModelManifest)
+├── 5. Verificar que todos los artifacts declarados existen en el ZIP
 ├── 6. Verificar que no existe (model_id, version) en el registry
-├── 7. Extraer ZIP a: /app/data/models_store/{model_id}/{version}/
+├── 7. Extraer ZIP a /app/data/models_store/installed/{model_id}/{version}/
+│       y registrar el modelo en registry.json (status: available)
 │
 ├── 8. Docker build ──────────────────────────────────────────────┐
-│       path=  install_path (raíz del paquete)                   │
-│       dockerfile= backend/Dockerfile                           │
-│       tag= {docker_image_name}:{docker_image_tag}              │
-│                                                                 │
-├── 9. Docker run ───────────────────────────────────────────────┤
-│       network= elan-ai-shared                                   │
-│       name= elan-ai-model-{model_id}-{version}                  │
-│       volumes= {MIDDLEWARE_VIDEOS_DIR}:/data/videos:ro          │
-│                                                                 │
-├── 10. Health check (esperar hasta startup_timeout_sec) ────────┤
-│        GET http://{container_name}:{port}/health                │
-│        ✓ 200 → continuar                                        │
-│        ✗ 503 → leer body JSON → mostrar error del backend       │
-│        ✗ timeout → mostrar error de conexión                    │
-│                                                                 │
-├── 11. Registrar en registry.json ──────────────────────────────┘
+│       context= install_path (raíz del paquete)                  │
+│       dockerfile= backend/Dockerfile                            │
+│       tag= {docker_image_name}:{docker_image_tag}               │
+│                                                                  │
+├── 9. Docker run (DockerService.ensure_container) ───────────────┤
+│       network= elan-ai-shared                                    │
+│       name= elan-ai-model-{model_id}-{version}                   │
+│       volumes= {MIDDLEWARE_VIDEOS_DIR}:/data/videos:ro           │
+│                                                                  │
+├── 10. Health check (hasta backend_config.startup_timeout_sec,   │
+│        120 s si el manifest lo omite; 180 s en el modelo de      │
+│        referencia)                                               │
+│        GET http://{container_name}:{port}/health                 │
+│        ✓ 200 → continuar                                         │
+│        ✗ 4xx/5xx → leer body JSON → error del backend inmediato  │
+│        ✗ timeout → error de conexión                             │
+│                                                                   │
+├── 11. Guardar bootstrap manifest en data/bootstrap_manifests/ ───┘
 │
-└── Respuesta 200: {message, model: InstalledModel}
+└── Respuesta 200: {"message": "Model installed successfully.", "model": InstalledModel}
 
-En cualquier fallo de los pasos 8–11:
-  → Eliminar directorio extraído
-  → Eliminar imagen Docker (si se construyó)
-  → Respuesta 422: {error_code, detail}
+En cualquier fallo de los pasos 8–10 (rollback):
+  → Quitar el modelo del registry y persistir registry.json
+  → Eliminar el directorio extraído
+  → Respuesta 400: {"error_code": "MODEL_PACKAGE_INVALID", "detail": "Docker lifecycle failed — ..."}
 ```
 
 ---
@@ -272,7 +286,7 @@ Invoke-RestMethod -Uri "http://localhost:8000/api/v1/models/install" `
 
 ```json
 {
-  "message": "Model 'lsec_bio_gloss_final_v1' version '1.0.0' installed successfully.",
+  "message": "Model installed successfully.",
   "model": {
     "model_id": "lsec_bio_gloss_final_v1",
     "name": "LSEC BIO Gloss Pipeline — Implementacion Final Tesis",
@@ -292,8 +306,10 @@ Invoke-RestMethod -Uri "http://localhost:8000/api/v1/models/install" `
 
 | Código HTTP | error_code | Causa |
 |---|---|---|
-| 422 | `MODEL_MANIFEST_NOT_FOUND` | No hay `manifest.json` en el ZIP |
-| 422 | `MODEL_PACKAGE_INVALID` | Manifest inválido, artifact faltante, Docker build fallido, contenedor no saludable |
+| 400 | `MODEL_PACKAGE_INVALID` | ZIP corrupto/vacío, ruta insegura, o fallo de Docker build/arranque/health check (con rollback) |
+| 400 | `MODEL_MANIFEST_NOT_FOUND` | No hay `manifest.json` en la raíz del ZIP |
+| 400 | `MODEL_MANIFEST_INVALID` | El manifest no es JSON válido o incumple el schema (incluye la lista de campos inválidos) |
+| 400 | `MODEL_ARTIFACT_MISSING` | Un artifact declarado no existe dentro del ZIP |
 | 409 | `MODEL_ALREADY_EXISTS` | Ya existe `(model_id, version)` en el registry |
 
 ---
@@ -316,10 +332,13 @@ docker logs elan-ai-model-lsec_bio_gloss_final_v1-1.0.0
 Causas comunes: falta de librerías del sistema, error en las importaciones Python.
 
 ### Error: `MODEL_ALREADY_EXISTS` aunque no hay modelos
-El registry del **volumen Docker** tiene una entrada que el filesystem local no tiene. Limpiar:
+El `registry.json` del bind mount (`./data/models_store/registry.json`) todavía contiene la entrada. Limpiar y reiniciar (borrando también el bootstrap manifest, o el modelo se re-registrará solo):
 ```bash
 docker exec elan-ai-middleware sh -c 'echo "{\"models\":[]}" > /app/data/models_store/registry.json'
+docker exec elan-ai-middleware sh -c 'rm -f /app/data/bootstrap_manifests/*.json'
+docker compose restart middleware
 ```
+> El middleware detecta y repara automáticamente entradas "fantasma" en memoria que ya no existen en `registry.json` (auto-curación en `_install_validated_package`), por lo que este error solo ocurre si la entrada persiste realmente en el archivo.
 
 ---
 
