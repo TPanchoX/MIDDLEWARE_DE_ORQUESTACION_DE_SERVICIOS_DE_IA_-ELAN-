@@ -1,0 +1,35 @@
+% ============================================================
+% Ajustes de formato solicitados en la revisión del tutor.
+%
+% CÓMO USARLO: agregar la línea
+%     \input{preambulo_correcciones}
+% en el preámbulo del documento principal (main.tex), después de
+% cargar los paquetes habituales (caption, fancyvrb, float, etc.)
+% y ANTES de \begin{document}.
+% ============================================================
+
+% ------------------------------------------------------------
+% 1. Numeración de tablas y figuras por capítulo:
+%    Tabla 2.1, Tabla 2.2, ..., Figura 3.1, Figura 3.2, ...
+%    (el número de capítulo corresponde al contador de \section)
+% ------------------------------------------------------------
+\usepackage{chngcntr}
+\counterwithin{table}{section}
+\counterwithin{figure}{section}
+
+% ------------------------------------------------------------
+% 2. Tipo flotante "Código", numerado por capítulo (Código 2.1,
+%    Código 3.1, ...). Reemplaza al antiguo "Listado".
+%    Se usa en el texto con: \captionof{codigo}{Descripción}
+%    Requiere el paquete caption (si el documento principal ya lo
+%    carga, la línea \usepackage{caption} puede eliminarse).
+% ------------------------------------------------------------
+\usepackage{caption}
+\DeclareCaptionType[within=section]{codigo}[Código][Índice de códigos]
+
+% ------------------------------------------------------------
+% 3. TikZ, usado por la figura del ciclo de desarrollo y por el
+%    diagrama de clases del middleware (capítulo de Metodología).
+% ------------------------------------------------------------
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, shapes.geometric, shapes.multipart, calc, fit}

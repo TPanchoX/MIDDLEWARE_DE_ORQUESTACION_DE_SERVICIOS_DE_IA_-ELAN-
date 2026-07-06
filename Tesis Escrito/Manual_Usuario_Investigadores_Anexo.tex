@@ -1,0 +1,397 @@
+% ============================================================
+%  MANUAL DE USUARIO PARA INVESTIGADORES
+%  Anotación asistida de videos LSEc con ELAN + middleware de IA
+%  Documento autónomo: compilar directamente con pdfLaTeX.
+%
+%  NOTA SOBRE LAS FIGURAS: cada figura tiene un recuadro de
+%  marcador de posición y, comentada justo encima, la línea
+%  \includegraphics correspondiente. Para insertar una captura:
+%    1. Guardar la imagen en la carpeta img/ con el nombre sugerido.
+%    2. Descomentar la línea \includegraphics.
+%    3. Borrar (o comentar) el \fbox del marcador.
+% ============================================================
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-tabla]{babel}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{fancyvrb}
+\usepackage{caption}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{amssymb}
+\usepackage[hidelinks]{hyperref}
+\usepackage{parskip}
+
+\renewcommand{\arraystretch}{1.15}
+
+% Marcador de posición para las capturas de pantalla
+\newcommand{\capturaPendiente}[2]{%
+\fbox{\parbox[c][#1][c]{0.85\textwidth}{\centering\itshape [Captura pendiente: #2]}}%
+}
+
+\begin{document}
+
+% ------------------------------------------------------------
+%  Portada
+% ------------------------------------------------------------
+\begin{titlepage}
+\centering
+\vspace*{3cm}
+{\LARGE \textbf{Manual de Usuario}\par}
+\vspace{0.6cm}
+{\Large Anotación asistida por inteligencia artificial\\
+de videos en Lengua de Señas Ecuatoriana (LSEc) con ELAN\par}
+\vspace{2cm}
+{\large Anexo del Trabajo de Integración Curricular\par}
+\vspace{0.4cm}
+{\large \textit{Middleware de orquestación para la anotación asistida\\
+de videos en Lengua de Señas Ecuatoriana (LSEc)}\par}
+\vfill
+{\large Versión del documento: 1.0\par}
+\vspace{0.3cm}
+{\large 2026\par}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ------------------------------------------------------------
+%  1. Qué hace esta herramienta
+% ------------------------------------------------------------
+\section{¿Qué hace esta herramienta por usted?}
+
+Anotar un video de lengua de señas desde cero es un trabajo minucioso: hay que reproducir el material una y otra vez, marcar dónde empieza y dónde termina cada seña, y asignarle una glosa. Esta herramienta no pretende reemplazar ese criterio experto --- ningún sistema automático puede hacerlo ---, pero sí ahorrarle la parte más mecánica del proceso.
+
+La idea es sencilla. Usted trabaja en ELAN como siempre lo ha hecho; la diferencia es que ahora, dentro de la pestaña de reconocedores, existe un componente nuevo que envía el video a un modelo de inteligencia artificial y recibe de vuelta una propuesta de segmentación: una lista de intervalos de tiempo, cada uno con una glosa sugerida y un nivel de confianza. Esos segmentos se cargan en una línea de anotación (un \textit{tier}) de su documento, y a partir de ahí el trabajo vuelve a ser suyo: revisar, corregir, aceptar o descartar cada propuesta.
+
+En otras palabras, la herramienta convierte la tarea de ``anotar desde cero'' en la tarea de ``revisar un borrador'', que suele ser considerablemente más rápida.
+
+Detrás de escena participan tres piezas, aunque usted solo interactúa con la primera:
+
+\begin{itemize}[noitemsep, topsep=2pt]
+    \item \textbf{ELAN}, el anotador que ya conoce, con un panel adicional para esta función.
+    \item El \textbf{middleware}, un servicio que corre en segundo plano en el computador y coordina la comunicación entre ELAN y los modelos.
+    \item Los \textbf{modelos de IA}, cada uno instalado como un paquete independiente, que son los que realmente analizan el video.
+\end{itemize}
+
+No hace falta entender cómo funcionan internamente el middleware ni los modelos para usar la herramienta; basta con seguir los pasos de este manual.
+
+% ------------------------------------------------------------
+%  2. Conceptos básicos
+% ------------------------------------------------------------
+\section{Cinco conceptos antes de empezar}
+
+Estos términos aparecen a lo largo del manual y en la propia interfaz, así que conviene tenerlos claros desde el inicio:
+
+\begin{table}[H]
+\centering
+\caption{Vocabulario mínimo de la herramienta}
+\small
+\begin{tabular}{
+    >{\raggedright\arraybackslash}p{3.4cm}
+    >{\raggedright\arraybackslash}p{11.0cm}
+}
+\toprule
+\textbf{Término} & \textbf{Qué significa aquí} \\
+\midrule
+Reconocedor & Componente de ELAN que ejecuta un análisis automático sobre el video. El de esta herramienta se llama \textit{AI Orchestration Middleware Bridge}. \\
+Middleware & Servicio local que recibe las peticiones de ELAN, ejecuta el modelo y devuelve los resultados. Debe estar encendido para que todo funcione. \\
+Modelo & El sistema de IA que analiza el video. Puede haber varios instalados; usted elige cuál usar en cada ejecución. \\
+Segmento & Intervalo de tiempo detectado por el modelo (por ejemplo, de 0,5 a 1,5 segundos) con una etiqueta y una confianza asociadas. \\
+Tier destino & La línea de anotación de ELAN donde se escribirán los segmentos detectados. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ------------------------------------------------------------
+%  3. Requisitos previos
+% ------------------------------------------------------------
+\section{Antes de empezar: lo que debe estar listo}
+
+La instalación inicial del sistema (ELAN adaptado, Docker y el middleware) es una tarea técnica que normalmente realiza una sola vez la persona encargada del soporte, siguiendo el manual técnico correspondiente. Como usuario, lo único que necesita verificar antes de cada sesión de trabajo es:
+
+\begin{enumerate}[topsep=2pt]
+    \item \textbf{Que Docker Desktop esté abierto.} Es la aplicación con el ícono de la ballena; el middleware y los modelos corren dentro de ella. Si el computador se acaba de encender, ábrala y espere a que indique que está en ejecución.
+    \item \textbf{Que el middleware esté encendido.} En la mayoría de instalaciones arranca junto con Docker Desktop. Más adelante veremos cómo comprobarlo desde el propio ELAN con un clic (el botón \textbf{Probar}).
+    \item \textbf{Que el video esté en la carpeta de videos configurada.} El middleware solo puede leer los videos ubicados en una carpeta específica definida durante la instalación. Si su video está en otro lugar, cópielo a esa carpeta antes de empezar (la persona de soporte puede indicarle cuál es).
+    \item \textbf{Que su documento de ELAN tenga el video vinculado.} Como en cualquier proyecto de ELAN, el archivo \texttt{.eaf} debe tener asociado el video que se va a analizar.
+\end{enumerate}
+
+Si alguno de estos puntos falla, no se preocupe: la sección de problemas frecuentes (al final del manual) explica cómo reconocer y resolver cada situación.
+
+% ------------------------------------------------------------
+%  4. Abrir el reconocedor
+% ------------------------------------------------------------
+\section{Paso 1: abrir la pestaña de reconocedores}
+
+Abra su documento en ELAN con el video ya vinculado. En la ventana principal, junto a las pestañas habituales (Grid, Text, Subtitles, Controls...), encontrará la pestaña \textbf{Recognizers} (Reconocedores). Selecciónela.
+
+En la parte superior de esa pestaña hay un menú desplegable con los reconocedores disponibles. Elija el que se llama:
+
+\begin{center}
+\textbf{AI Orchestration Middleware Bridge}
+\end{center}
+
+Al seleccionarlo, la parte central de la pestaña mostrará el panel de control de la herramienta, que es donde ocurrirá casi todo el trabajo de este manual.
+
+\begin{figure}[H]
+\centering
+% \includegraphics[width=0.85\textwidth]{img/fig01_pestana_recognizers.png}
+\capturaPendiente{7cm}{ventana principal de ELAN con la pestaña Recognizers activa y el desplegable mostrando ``AI Orchestration Middleware Bridge'' seleccionado}
+\caption{Selección del reconocedor en la pestaña Recognizers de ELAN}
+\label{fig:pestana}
+\end{figure}
+
+% ------------------------------------------------------------
+%  5. El panel de control
+% ------------------------------------------------------------
+\section{Paso 2: conocer el panel de control}
+
+El panel está organizado en cuatro zonas, de arriba hacia abajo. Vale la pena reconocerlas antes de usarlas:
+
+\begin{itemize}[topsep=2pt]
+    \item \textbf{Servidor.} Muestra la dirección del middleware (normalmente \texttt{http://127.0.0.1:8000}, que significa ``en este mismo computador'') junto a dos botones: \textbf{Probar}, que verifica la conexión, y \textbf{Gestionar modelos\ldots}, que abre la ventana de administración de modelos. En condiciones normales no hay que modificar la dirección.
+    \item \textbf{Video a analizar.} Un desplegable con los videos vinculados al documento. Si el documento tiene un solo video, ya estará seleccionado.
+    \item \textbf{Modelo de IA.} El desplegable donde se elige qué modelo analizará el video, acompañado de una etiqueta de estado que indica si el modelo elegido está activo.
+    \item \textbf{Configuración de anotación.} Dos campos: el \textbf{tier destino} (dónde se escribirán los segmentos) y el \textbf{formato de etiqueta} (qué texto llevará cada anotación). Se rellenan solos al elegir un modelo, como veremos en el Paso 5.
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+% \includegraphics[width=0.75\textwidth]{img/fig02_panel_control.png}
+\capturaPendiente{9cm}{panel de control completo del reconocedor, con las cuatro zonas visibles: Servidor, Video a analizar, Modelo de IA y Configuración de anotación}
+\caption{Panel de control del reconocedor y sus cuatro zonas}
+\label{fig:panel}
+\end{figure}
+
+% ------------------------------------------------------------
+%  6. Probar la conexión
+% ------------------------------------------------------------
+\section{Paso 3: comprobar que el middleware responde}
+
+Antes de cualquier otra cosa, pulse el botón \textbf{Probar} de la zona Servidor. En uno o dos segundos aparecerá el resultado junto al botón:
+
+\begin{itemize}[noitemsep, topsep=2pt]
+    \item \textbf{\checkmark\ Servidor disponible}: todo en orden, puede continuar.
+    \item \textbf{$\times$ No disponible}: el middleware no está respondiendo. Lo más habitual es que Docker Desktop no esté abierto o que el middleware no haya arrancado; revise el punto 1 de los requisitos o consulte la sección de problemas frecuentes.
+\end{itemize}
+
+Este pequeño hábito --- probar la conexión al empezar la sesión --- evita descubrir el problema recién al ejecutar el análisis, cuando ya se ha configurado todo lo demás.
+
+\begin{figure}[H]
+\centering
+% \includegraphics[width=0.75\textwidth]{img/fig03_conexion_ok.png}
+\capturaPendiente{4cm}{zona Servidor del panel mostrando el mensaje ``Servidor disponible'' en verde tras pulsar Probar}
+\caption{Verificación de conexión exitosa con el middleware}
+\label{fig:conexion}
+\end{figure}
+
+% ------------------------------------------------------------
+%  7. Gestión de modelos
+% ------------------------------------------------------------
+\section{Paso 4: gestionar los modelos de IA}
+
+Los modelos se administran desde una ventana dedicada. Pulse \textbf{Gestionar modelos\ldots} en la zona Servidor y se abrirá el diálogo \textbf{Gestión de modelos de IA}, que contiene:
+
+\begin{itemize}[noitemsep, topsep=2pt]
+    \item Una barra de \textbf{Estado del servidor} con su propio botón \textbf{Probar conexión}.
+    \item La tabla \textbf{Modelos instalados}, con columnas Nombre del modelo, Versión, Estado y Tipo de runtime.
+    \item Los botones \textbf{Actualizar lista}, \textbf{Instalar desde ZIP\ldots}, \textbf{Activar} y \textbf{Desactivar}.
+    \item El área \textbf{Detalle del modelo seleccionado}, que muestra la ficha completa del modelo marcado en la tabla.
+    \item El registro de \textbf{Actividad}, donde cada operación va dejando constancia de lo que ocurre.
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+% \includegraphics[width=0.85\textwidth]{img/fig04_gestor_modelos.png}
+\capturaPendiente{9cm}{diálogo ``Gestión de modelos de IA'' completo, con la tabla de modelos instalados, los botones de acción, el detalle y el registro de actividad}
+\caption{Ventana de gestión de modelos de IA}
+\label{fig:gestor}
+\end{figure}
+
+\subsection{Instalar un modelo nuevo}
+
+Los modelos llegan como archivos \texttt{.zip} preparados por sus desarrolladores. Para instalar uno:
+
+\begin{enumerate}[topsep=2pt]
+    \item Pulse \textbf{Instalar desde ZIP\ldots} y seleccione el archivo del modelo en el explorador que se abre.
+    \item Espere. La instalación puede tardar \textbf{varios minutos} la primera vez, porque el sistema construye internamente el entorno de ejecución del modelo y carga sus componentes. El registro de Actividad va mostrando el avance; no cierre la ventana durante el proceso.
+    \item Al terminar, el modelo aparece en la tabla con estado \textbf{Activo}, listo para usarse.
+\end{enumerate}
+
+Si la instalación falla, el registro de Actividad muestra el motivo. Los casos más comunes son un archivo ZIP que no corresponde a un paquete de modelo válido o un modelo que ya estaba instalado con la misma versión. Ante un mensaje que no le resulte claro, lo más práctico es reenviarlo tal cual a la persona que le entregó el paquete: el texto del error está pensado para que el desarrollador identifique el problema de inmediato.
+
+\begin{figure}[H]
+\centering
+% \includegraphics[width=0.85\textwidth]{img/fig05_instalacion.png}
+\capturaPendiente{6cm}{diálogo de gestión durante una instalación, con el registro de Actividad mostrando el progreso y el nuevo modelo apareciendo en la tabla}
+\caption{Instalación de un modelo desde un paquete ZIP}
+\label{fig:instalacion}
+\end{figure}
+
+\subsection{Consultar los detalles de un modelo}
+
+Al hacer clic sobre cualquier fila de la tabla, el área de detalle muestra su ficha: identificador, nombre, versión, tarea que realiza (por ejemplo, ``Segmentación y clasificación de glosas''), estado, fecha de instalación y la configuración de anotación que sugiere (tier, etiqueta y formato). Esta ficha es útil cuando hay varios modelos instalados y se quiere confirmar cuál hace qué antes de elegirlo.
+
+\subsection{Activar y desactivar modelos}
+
+Un modelo \textbf{desactivado} sigue instalado pero no puede ejecutar análisis; es una forma de apartar temporalmente modelos antiguos o en evaluación sin desinstalarlos. Para cambiar el estado, seleccione el modelo en la tabla y pulse \textbf{Activar} o \textbf{Desactivar} según corresponda. El cambio se refleja de inmediato en la columna Estado.
+
+Tenga en cuenta que si intenta ejecutar un análisis con un modelo desactivado, el panel se lo advertirá con el mensaje ``\textit{Modelo desactivado --- actívalo antes de ejecutar}'' y el middleware rechazará la petición.
+
+Cuando termine, pulse \textbf{Cerrar}. Si instaló o activó modelos, el desplegable del panel principal se actualiza solo al volver.
+
+% ------------------------------------------------------------
+%  8. Configurar el análisis
+% ------------------------------------------------------------
+\section{Paso 5: configurar el análisis}
+
+De vuelta en el panel de control, quedan tres decisiones, y dos de ellas prácticamente se toman solas:
+
+\begin{enumerate}[topsep=2pt]
+    \item \textbf{Elegir el video} en el desplegable ``Video a analizar'', si el documento tiene más de uno.
+    \item \textbf{Elegir el modelo} en el desplegable ``Modelo de IA''. Los modelos activos aparecen primero. Al seleccionar uno, la etiqueta de estado confirmará ``\checkmark\ Modelo activo'' y --- aquí está la parte cómoda --- la zona de Configuración de anotación se rellenará automáticamente con los valores que el propio modelo recomienda.
+    \item \textbf{Revisar la configuración de anotación}, que tiene dos campos:
+    \begin{itemize}[noitemsep, topsep=2pt]
+        \item \textbf{Tier destino}: el nombre de la línea de anotación donde se escribirán los segmentos (por ejemplo, \texttt{AUTO\_GLOSS\_SEGMENTS}). Puede cambiarlo si prefiere otro nombre; si el tier no existe, se creará al cargar los resultados. Se recomienda usar un tier dedicado a resultados automáticos, separado de sus anotaciones manuales, para poder compararlos y depurarlos con libertad.
+        \item \textbf{Formato de etiqueta}: qué texto llevará cada anotación creada. ``\textit{Mejor glosa predicha}'' escribe la glosa que el modelo consideró más probable para cada segmento (la opción habitual para trabajo lingüístico); ``\textit{Solo etiqueta de región (sin clasificación)}'' marca únicamente que allí hay una seña, sin identificarla, útil cuando solo interesa la segmentación temporal.
+    \end{itemize}
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+% \includegraphics[width=0.75\textwidth]{img/fig06_configuracion.png}
+\capturaPendiente{7cm}{panel con un modelo seleccionado, la etiqueta ``Modelo activo'' visible y los campos de tier destino y formato de etiqueta ya pre-poblados}
+\caption{Panel configurado y listo para ejecutar el análisis}
+\label{fig:configuracion}
+\end{figure}
+
+% ------------------------------------------------------------
+%  9. Ejecutar
+% ------------------------------------------------------------
+\section{Paso 6: ejecutar el reconocimiento}
+
+Con todo configurado, pulse el botón \textbf{Start} de la pestaña de reconocedores (es el botón estándar de ELAN para iniciar cualquier reconocedor, situado bajo el panel). A partir de ese momento:
+
+\begin{itemize}[topsep=2pt]
+    \item La barra de progreso de ELAN indicará que el análisis está en marcha.
+    \item El tiempo de espera depende de la duración del video y del modelo; como referencia, un video corto de pocos segundos suele resolverse en menos de medio minuto una vez que el modelo ya ha sido usado en la sesión. La primera ejecución después de encender el computador puede tardar algo más, porque el modelo debe ``despertar''.
+    \item Puede seguir usando ELAN mientras tanto, pero evite cerrar el programa o apagar Docker durante el análisis.
+\end{itemize}
+
+Cuando el proceso termina, la barra de progreso llega al final y los segmentos detectados quedan disponibles para cargarse como anotaciones. Si algo sale mal, ELAN mostrará el mensaje de error correspondiente; el botón \textbf{Report} de la misma pestaña abre un informe detallado de la ejecución que resulta muy útil para diagnosticar (y para compartir con soporte técnico si hace falta).
+
+\begin{figure}[H]
+\centering
+% \includegraphics[width=0.85\textwidth]{img/fig07_ejecucion.png}
+\capturaPendiente{5cm}{pestaña de reconocedores durante la ejecución, con la barra de progreso avanzando}
+\caption{Ejecución del reconocimiento en curso}
+\label{fig:ejecucion}
+\end{figure}
+
+% ------------------------------------------------------------
+%  10. Cargar resultados
+% ------------------------------------------------------------
+\section{Paso 7: cargar los segmentos como anotaciones}
+
+Terminado el análisis, ELAN habilita el botón \textbf{Create Tier(s)\ldots} en la pestaña de reconocedores. Este es el paso que convierte los resultados del modelo en anotaciones reales de su documento:
+
+\begin{enumerate}[topsep=2pt]
+    \item Pulse \textbf{Create Tier(s)\ldots}; se abrirá un diálogo con la segmentación producida por el modelo.
+    \item Confirme la creación. Los segmentos se insertarán en el tier destino configurado en el Paso 5 (si el tier no existía, ELAN lo crea en ese momento).
+    \item Cierre el diálogo y observe la línea de tiempo: el nuevo tier mostrará una anotación por cada segmento detectado, con la glosa propuesta como texto.
+\end{enumerate}
+
+No olvide \textbf{guardar el documento} (Ctrl+S) después de cargar los resultados: hasta ese momento, las anotaciones nuevas solo existen en la sesión abierta.
+
+\begin{figure}[H]
+\centering
+% \includegraphics[width=0.85\textwidth]{img/fig08_create_tiers.png}
+\capturaPendiente{6cm}{diálogo Create Tier(s) de ELAN mostrando la segmentación lista para insertarse}
+\caption{Carga de los segmentos detectados en el tier destino}
+\label{fig:createtiers}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+% \includegraphics[width=0.9\textwidth]{img/fig09_resultado_timeline.png}
+\capturaPendiente{7cm}{línea de tiempo de ELAN con el tier AUTO\_GLOSS\_SEGMENTS poblado con los segmentos y glosas detectados, junto a los tiers manuales del documento}
+\caption{Resultado final: segmentos y glosas propuestos por el modelo en la línea de tiempo}
+\label{fig:resultado}
+\end{figure}
+
+% ------------------------------------------------------------
+%  11. Revisión
+% ------------------------------------------------------------
+\section{El paso más importante: su revisión}
+
+Conviene decirlo sin rodeos: \textbf{los resultados del modelo son una propuesta, no una verdad}. Los modelos aciertan con frecuencia, pero también cometen errores --- segmentos desplazados, señas no detectadas, glosas confundidas entre sí ---, y la calidad varía según la iluminación del video, el señante y el vocabulario cubierto por el modelo.
+
+El flujo de trabajo recomendado es el mismo que seguiría con el borrador de un colega:
+
+\begin{itemize}[noitemsep, topsep=2pt]
+    \item Recorra el tier de resultados reproduciendo cada segmento y verifique que los límites temporales coincidan con la seña real; ajústelos arrastrando los bordes de la anotación, como con cualquier anotación de ELAN.
+    \item Corrija las glosas mal asignadas editando el texto de la anotación.
+    \item Elimine los segmentos falsos y añada manualmente las señas que el modelo pasó por alto.
+    \item Mantenga sus anotaciones definitivas en sus propios tiers y conserve el tier automático como referencia, o elimínelo cuando ya no lo necesite.
+\end{itemize}
+
+Trabajar así tiene una ventaja adicional para el proyecto: al comparar sus correcciones con las propuestas del modelo, el equipo de desarrollo puede medir qué tan bien está funcionando y entrenar versiones mejores.
+
+% ------------------------------------------------------------
+%  12. Problemas frecuentes
+% ------------------------------------------------------------
+\section{Problemas frecuentes y cómo resolverlos}
+
+La tabla siguiente reúne las situaciones que con más probabilidad encontrará, ordenadas desde la más común. Si el problema persiste después de intentar la solución indicada, anote el mensaje exacto que muestra la interfaz (o el informe del botón Report) y compártalo con la persona de soporte.
+
+\begin{table}[H]
+\centering
+\caption{Situaciones frecuentes durante el uso de la herramienta}
+\footnotesize
+\begin{tabular}{
+    >{\raggedright\arraybackslash}p{4.8cm}
+    >{\raggedright\arraybackslash}p{9.6cm}
+}
+\toprule
+\textbf{Qué observa} & \textbf{Qué hacer} \\
+\midrule
+``$\times$ No disponible'' al pulsar Probar & El middleware no responde. Verifique que Docker Desktop esté abierto y en ejecución; espere un minuto tras encenderlo y vuelva a probar. \\
+``No hay modelos instalados. Usa `Gestionar modelos\ldots'.'' & Aún no se ha instalado ningún modelo. Abra el gestor e instale el paquete ZIP que le hayan entregado (Paso 4). \\
+``Modelo desactivado --- actívalo antes de ejecutar'' & El modelo elegido está apagado. Abra el gestor, selecciónelo en la tabla y pulse Activar. \\
+La instalación del ZIP falla & Revise el registro de Actividad: si indica que el modelo ya existe, es que esa versión ya estaba instalada; si indica un paquete inválido, contacte a quien le entregó el archivo y reenvíele el mensaje. \\
+El análisis falla mencionando el video & Lo más probable es que el video no esté en la carpeta de videos configurada. Cópielo allí, vuelva a vincularlo si hace falta y reintente. \\
+El análisis tarda demasiado y termina en error de tiempo & Videos muy largos pueden exceder el tiempo máximo permitido. Pruebe con un fragmento más corto del video o consulte con soporte la posibilidad de ampliar el límite. \\
+El análisis termina pero no aparecen segmentos & No siempre es un error: puede que el modelo no haya detectado señas en ese material. Verifique con un video donde el señante sea claramente visible y bien iluminado. \\
+Los resultados aparecen en un tier inesperado & Revise el campo ``Tier destino'' antes de ejecutar: los segmentos se escriben exactamente en el tier que allí se indique. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ------------------------------------------------------------
+%  13. Resumen
+% ------------------------------------------------------------
+\section{Resumen del flujo de trabajo}
+
+Una vez familiarizado con la herramienta, el ciclo completo se reduce a una rutina breve:
+
+\begin{enumerate}[noitemsep, topsep=2pt]
+    \item Abrir el documento en ELAN con el video vinculado (el video debe estar en la carpeta de videos).
+    \item Ir a la pestaña Recognizers y seleccionar \textit{AI Orchestration Middleware Bridge}.
+    \item Pulsar \textbf{Probar} para confirmar que el middleware responde.
+    \item (Solo la primera vez, o al recibir un modelo nuevo) instalarlo y activarlo desde \textbf{Gestionar modelos\ldots}
+    \item Seleccionar video y modelo; revisar tier destino y formato de etiqueta.
+    \item Pulsar \textbf{Start} y esperar a que la barra de progreso termine.
+    \item Cargar los resultados con \textbf{Create Tier(s)\ldots} y guardar el documento.
+    \item Revisar y corregir las propuestas del modelo, que es donde su experticia hace la diferencia.
+\end{enumerate}
+
+Con la práctica, los pasos 1 a 7 toman apenas un par de minutos, y el tiempo de la sesión se concentra donde debe estar: en el análisis lingüístico del material.
+
+\end{document}

@@ -1,0 +1,757 @@
+% ============================================================
+%  MANUAL TÉCNICO PARA DESARROLLADORES DE BACKENDS DE MODELOS
+%  Middleware de orquestación ELAN-IA
+%  Documento autónomo: compilar directamente con pdfLaTeX.
+% ============================================================
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-tabla]{babel}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{fancyvrb}
+\usepackage{caption}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{amssymb}
+\usepackage[hidelinks]{hyperref}
+\usepackage{parskip}
+
+\renewcommand{\arraystretch}{1.15}
+
+\begin{document}
+
+% ------------------------------------------------------------
+%  Portada
+% ------------------------------------------------------------
+\begin{titlepage}
+\centering
+\vspace*{3cm}
+{\LARGE \textbf{Manual Técnico para Desarrolladores}\par}
+\vspace{0.6cm}
+{\Large Empaquetado e instalación de backends de modelos de IA\\
+en el middleware de orquestación ELAN-IA\par}
+\vspace{2cm}
+{\large Anexo del Trabajo de Integración Curricular\par}
+\vspace{0.4cm}
+{\large \textit{Middleware de orquestación para la anotación asistida\\
+de videos en Lengua de Señas Ecuatoriana (LSEc)}\par}
+\vfill
+{\large Versión del documento: 1.0\par}
+\vspace{0.3cm}
+{\large 2026\par}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ------------------------------------------------------------
+%  1. Propósito y alcance
+% ------------------------------------------------------------
+\section{Propósito y alcance de este manual}
+
+Este manual está dirigido a cualquier desarrollador que haya entrenado un modelo de inteligencia artificial para segmentación de video (con o sin clasificación de glosas) y quiera que ese modelo funcione dentro de ELAN a través del middleware de orquestación. La idea central es simple: el desarrollador no necesita tocar ni una línea del middleware ni de ELAN. Su única responsabilidad es entregar un archivo \textbf{.zip} con una estructura y un contrato bien definidos; el middleware se encarga del resto (construir la imagen Docker, arrancar el contenedor, verificar su salud y enrutar las inferencias).
+
+Al terminar de leer este documento, el desarrollador sabrá:
+
+\begin{itemize}[noitemsep, topsep=2pt]
+    \item Cómo organizar los archivos de su modelo dentro del paquete ZIP.
+    \item Cómo escribir el \texttt{manifest.json}, que actúa como contrato de empaquetado.
+    \item Qué endpoints HTTP debe exponer su backend y con qué formato exacto de entrada y salida.
+    \item Cómo escribir el \texttt{Dockerfile} para que el middleware pueda construir la imagen.
+    \item Cómo verificar el paquete antes de entregarlo y cómo diagnosticar los errores más comunes.
+\end{itemize}
+
+Un punto importante sobre el alcance: el middleware es \textbf{agnóstico al modelo}. No le importa si internamente se usan keypoints, redes recurrentes, transformers o cualquier otra técnica; eso es decisión del desarrollador del backend. Lo único que el middleware exige es que el paquete respete el contrato descrito aquí. Si el contrato se cumple, la instalación desde la interfaz de ELAN funciona sin intervención manual.
+
+% ------------------------------------------------------------
+%  2. Cómo funciona la integración
+% ------------------------------------------------------------
+\section{Cómo funciona la integración (visión general)}
+
+Antes de entrar en detalles conviene entender el ciclo completo. El middleware \textbf{no ejecuta el modelo directamente}: cada modelo vive en su propio contenedor Docker, como un servicio HTTP independiente. El flujo es el siguiente:
+
+\begin{enumerate}[noitemsep, topsep=2pt]
+    \item El desarrollador empaqueta su modelo (código, pesos, configuración y \texttt{Dockerfile}) en un ZIP con un \texttt{manifest.json} en la raíz.
+    \item El usuario instala ese ZIP desde el gestor de modelos de ELAN (o mediante una llamada directa a \texttt{POST /api/v1/models/install}).
+    \item El middleware valida el paquete, lo registra, construye la imagen con \texttt{docker build}, arranca el contenedor en la red compartida \texttt{elan-ai-shared} y espera a que el endpoint \texttt{/health} del backend responda correctamente.
+    \item En cada inferencia, el middleware envía al backend una petición \texttt{POST /infer} con la ruta del video y recibe a cambio los segmentos detectados, que luego se transforman en anotaciones dentro de ELAN.
+\end{enumerate}
+
+En consecuencia, el backend es una aplicación web pequeña (en los ejemplos de este manual, FastAPI sobre Python) que corre dentro de Docker y expone exactamente dos endpoints: \texttt{GET /health} y \texttt{POST /infer}. Toda la lógica de procesamiento del video --- extracción de características, ventaneo, inferencia, postprocesamiento --- ocurre dentro del backend, con total libertad de implementación.
+
+Un detalle práctico que evita muchos dolores de cabeza: el middleware monta la carpeta de videos del anotador dentro del contenedor del modelo, en la ruta interna \texttt{/data/videos/}. Por eso, cuando el backend recibe una ruta como \texttt{/data/videos/mi\_video.mp4}, puede abrirla directamente con OpenCV o la librería que prefiera, sin descargas ni transferencias adicionales.
+
+% ------------------------------------------------------------
+%  3. Requisitos previos
+% ------------------------------------------------------------
+\section{Requisitos previos}
+
+Para desarrollar y probar un backend se necesita:
+
+\begin{itemize}[noitemsep, topsep=2pt]
+    \item \textbf{Docker Desktop} (o Docker Engine) instalado y en ejecución.
+    \item El \textbf{middleware} levantado con \texttt{docker compose up -d} desde su repositorio. Se puede comprobar con \texttt{curl http://localhost:8000/health}, que debe responder \texttt{\{"status": "ok", ...\}}.
+    \item Conocimientos básicos de Python y de la construcción de imágenes Docker.
+    \item Los artefactos del modelo ya entrenado: pesos, vocabularios, archivos de configuración, etc.
+\end{itemize}
+
+No hace falta clonar ni modificar el código del middleware: todo el trabajo del desarrollador ocurre dentro de su propia carpeta de proyecto.
+
+% ------------------------------------------------------------
+%  4. Estructura del paquete ZIP
+% ------------------------------------------------------------
+\section{Estructura obligatoria del paquete ZIP}
+
+El paquete es una carpeta comprimida cuyo contenido sigue una convención fija. Solo dos elementos son estrictamente obligatorios --- el \texttt{manifest.json} en la raíz y los archivos que ese manifest declare como artefactos ---, pero la estructura recomendada es la siguiente:
+
+\begin{center}
+\begin{minipage}{0.9\textwidth}
+\hrule
+\vspace{0.06cm}
+\small
+\begin{Verbatim}[baselinestretch=0.85]
+mi_modelo_v1/
+|-- manifest.json           <- OBLIGATORIO: contrato de empaquetado
+|-- backend/
+|   |-- Dockerfile          <- OBLIGATORIO: define la imagen Docker
+|   |-- requirements.txt    <- dependencias Python del backend
+|   \-- app/
+|       \-- main.py         <- servidor FastAPI con /health y /infer
+|-- weights/
+|   \-- modelo.pt           <- pesos del modelo entrenado
+|-- vocab/
+|   \-- vocab.csv           <- vocabulario de glosas (si aplica)
+|-- config/
+|   \-- config.json         <- hiperparametros y configuracion
+\-- README.md               <- descripcion breve del modelo
+\end{Verbatim}
+\vspace{0.03cm}
+\hrule
+\captionof{figure}{Estructura recomendada del paquete ZIP de un modelo}
+\end{minipage}
+\end{center}
+
+Dos aclaraciones que suelen generar confusión:
+
+\begin{itemize}[topsep=2pt]
+    \item \textbf{El contexto de build es la raíz del ZIP.} Cuando el middleware construye la imagen, ejecuta \texttt{docker build} usando como contexto todo el contenido extraído del paquete, no solo la carpeta \texttt{backend/}. Esto permite que el \texttt{Dockerfile} copie los pesos con instrucciones como \texttt{COPY weights/ ./weights/}, aunque el \texttt{Dockerfile} viva dentro de \texttt{backend/}.
+    \item \textbf{El manifest debe quedar en la raíz del ZIP.} Al comprimir, hay que asegurarse de que \texttt{manifest.json} quede en el primer nivel del archivo y no anidado en subcarpetas. El middleware tolera el caso frecuente en Windows en que la compresión agrega una única carpeta contenedora (detecta ese prefijo y lo descarta automáticamente), pero cualquier anidamiento adicional provoca el rechazo del paquete con el error \texttt{MODEL\_MANIFEST\_NOT\_FOUND}.
+\end{itemize}
+
+% ------------------------------------------------------------
+%  5. El manifest.json
+% ------------------------------------------------------------
+\section{El archivo \texttt{manifest.json}: contrato de empaquetado}
+
+El \texttt{manifest.json} es la pieza que convierte una carpeta cualquiera en un modelo instalable. El middleware lo valida con esquemas Pydantic antes de tocar Docker; si algún campo falta o tiene un valor no permitido, la instalación se rechaza de inmediato con un mensaje que indica el problema exacto. A continuación se muestra un ejemplo completo y funcional, seguido de la explicación de cada bloque.
+
+\begin{center}
+\begin{minipage}{0.92\textwidth}
+\hrule
+\vspace{0.06cm}
+\footnotesize
+\begin{Verbatim}[baselinestretch=0.75]
+{
+  "model_id": "mi_modelo_v1",
+  "name": "Nombre Legible de Mi Modelo",
+  "version": "1.0.0",
+  "task": "video_segmentation_and_gloss_classification",
+
+  "runtime": {
+    "mode": "docker",
+    "framework": "container",
+    "runner": "docker_http"
+  },
+
+  "artifacts": {
+    "dockerfile":   "backend/Dockerfile",
+    "requirements": "backend/requirements.txt",
+    "weights":      "weights/modelo.pt",
+    "config":       "config/config.json"
+  },
+
+  "input_contract": {
+    "media_type": "video"
+  },
+
+  "output_contract": {
+    "type":    "segments_with_gloss",
+    "classes": ["O", "B", "I"]
+  },
+
+  "ui": {
+    "default_label":       "MI_REGION",
+    "default_target_tier": "AUTO_SEGMENTS",
+    "label_mode":          "gloss_top1",
+    "supports_threshold":  false
+  },
+
+  "backend_config": {
+    "docker_image_name":   "mi-modelo",
+    "docker_image_tag":    "1.0.0",
+    "container_port":      8080,
+    "health_path":         "/health",
+    "infer_path":          "/infer",
+    "startup_timeout_sec": 180
+  },
+
+  "container": {
+    "internal_port":       8080,
+    "health_path":         "/health",
+    "infer_path":          "/infer",
+    "startup_timeout_sec": 30
+  }
+}
+\end{Verbatim}
+\vspace{0.03cm}
+\hrule
+\captionof{figure}{Ejemplo completo de \texttt{manifest.json} para un modelo instalable}
+\end{minipage}
+\end{center}
+
+\subsection{Identidad del modelo}
+
+Los campos \texttt{model\_id}, \texttt{name} y \texttt{version} identifican al modelo dentro del registro del middleware. El par \texttt{model\_id} + \texttt{version} debe ser único: si ya existe un modelo instalado con esa combinación, la instalación responde \texttt{409 MODEL\_ALREADY\_EXISTS}. Tanto \texttt{model\_id} como \texttt{version} solo admiten letras, dígitos, punto, guion y guion bajo (patrón \texttt{[A-Za-z0-9\_.-]}); esto evita rutas inseguras al extraer el paquete en disco. El campo \texttt{name} es libre y es lo que el usuario final ve en la interfaz de ELAN.
+
+\subsection{Tarea y ejecución}
+
+El campo \texttt{task} acepta exactamente dos valores, y cualquier otro provoca el rechazo del paquete:
+
+\begin{itemize}[noitemsep, topsep=2pt]
+    \item \texttt{video\_segmentation}: el modelo detecta regiones temporales sin clasificar su contenido.
+    \item \texttt{video\_segmentation\_and\_gloss\_classification}: además de segmentar, asigna una glosa a cada región detectada.
+\end{itemize}
+
+El bloque \texttt{runtime}, por su parte, es prácticamente fijo en la versión actual del middleware: \texttt{mode} debe ser \texttt{"docker"}, \texttt{framework} debe ser \texttt{"container"} y \texttt{runner} debe ser \texttt{"docker\_http"}. Estos valores le indican al middleware que el modelo se ejecuta como contenedor y que la comunicación es por HTTP.
+
+\subsection{Artefactos}
+
+El objeto \texttt{artifacts} es un mapa de nombres lógicos a rutas \textbf{relativas a la raíz del ZIP}. El middleware verifica que cada archivo declarado exista realmente dentro del paquete antes de extraer nada; si falta alguno, responde \texttt{400 MODEL\_ARTIFACT\_MISSING} indicando cuál. Los nombres de las claves son libres (\texttt{weights}, \texttt{vocab}, \texttt{config}...), pero como mínimo conviene declarar el \texttt{Dockerfile} y el \texttt{requirements.txt}, porque así la validación temprana detecta paquetes incompletos antes de intentar el build.
+
+\subsection{Contratos de entrada y salida}
+
+El bloque \texttt{input\_contract} exige al menos \texttt{media\_type: "video"}; los campos adicionales (por ejemplo \texttt{feature\_type} o \texttt{input\_dim}) son informativos y quedan a criterio del desarrollador. El bloque \texttt{output\_contract} requiere un \texttt{type} (normalmente \texttt{"segments"} o \texttt{"segments\_with\_gloss"}, en coherencia con lo que el backend devuelve en \texttt{/infer}) y una lista \texttt{classes} con al menos un elemento no vacío.
+
+\subsection{Configuración de interfaz (\texttt{ui})}
+
+El bloque \texttt{ui} es obligatorio como objeto, aunque sus campos internos son opcionales. Sus valores pre-pueblan el panel del reconocedor en ELAN: \texttt{default\_target\_tier} indica en qué línea de anotación se escribirán los segmentos, \texttt{default\_label} es la etiqueta por defecto y \texttt{label\_mode} controla cómo se construye el texto de cada anotación (por ejemplo, \texttt{gloss\_top1} usa la glosa más probable como etiqueta).
+
+\subsection{Configuración Docker (\texttt{backend\_config} y \texttt{container})}
+
+Estos dos bloques se parecen, pero cumplen roles distintos y vale la pena entender la diferencia:
+
+\begin{itemize}[topsep=2pt]
+    \item \texttt{backend\_config} se usa \textbf{durante la instalación}: define el nombre y el tag de la imagen que se construirá (\texttt{docker\_image\_name} debe ir en minúsculas y sin espacios, por restricción de Docker) y el tiempo máximo de espera del primer arranque (\texttt{startup\_timeout\_sec}). Ese primer arranque suele ser el más lento porque el backend carga los pesos por primera vez; un valor de 180 segundos es razonable para modelos medianos. Si el bloque se omite, el middleware aplica 120 segundos por defecto.
+    \item \texttt{container} se usa \textbf{en cada inferencia} y es obligatorio cuando \texttt{runner = docker\_http}. Define el puerto interno del servicio (\texttt{internal\_port}, que debe coincidir con el \texttt{EXPOSE} del Dockerfile y con el puerto donde escucha el servidor), las rutas de los endpoints y un timeout de arranque corto (30 segundos es suficiente, porque en operación normal el contenedor ya está caliente y solo se reinicia si estaba detenido).
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\caption{Reglas estrictas de validación del \texttt{manifest.json}}
+\small
+\begin{tabular}{
+    >{\raggedright\arraybackslash}p{5.2cm}
+    >{\raggedright\arraybackslash}p{9.3cm}
+}
+\toprule
+\textbf{Campo} & \textbf{Restricción verificada por el middleware} \\
+\midrule
+\texttt{model\_id}, \texttt{version} & No vacíos; solo caracteres \texttt{[A-Za-z0-9\_.-]}. \\
+\texttt{task} & Exactamente \texttt{video\_segmentation} o \texttt{video\_segmentation\_and\_gloss\_classification}. \\
+\texttt{runtime.mode} & Exactamente \texttt{"docker"}. \\
+\texttt{runtime.framework} & Exactamente \texttt{"container"}. \\
+\texttt{runtime.runner} & \texttt{"docker\_http"} para modelos en contenedor. \\
+\texttt{artifacts} & Al menos una entrada; claves y rutas no vacías; cada archivo debe existir en el ZIP. \\
+\texttt{input\_contract.media\_type} & Exactamente \texttt{"video"}. \\
+\texttt{output\_contract.classes} & Lista con al menos un elemento; sin cadenas vacías. \\
+\texttt{ui} & Objeto presente (sus campos internos son opcionales). \\
+\texttt{backend\_config.docker\_image\_name} & Minúsculas, sin espacios (convención de nombres de Docker). \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ------------------------------------------------------------
+%  6. El Dockerfile
+% ------------------------------------------------------------
+\section{El \texttt{Dockerfile} del backend}
+
+El \texttt{Dockerfile} le dice a Docker cómo construir la imagen del modelo. Recordando que el contexto de build es la raíz del ZIP, un \texttt{Dockerfile} típico para un backend en Python se ve así:
+
+\begin{center}
+\begin{minipage}{0.92\textwidth}
+\hrule
+\vspace{0.06cm}
+\footnotesize
+\begin{Verbatim}[baselinestretch=0.8]
+FROM python:3.11-slim
+
+# Directorio de trabajo DENTRO del contenedor
+WORKDIR /model_service
+
+# Librerias del sistema (ajustar segun las dependencias del modelo)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libglib2.0-0 \
+        libgomp1 \
+        libgl1 \
+        libegl1 \
+        libgles2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Dependencias Python
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
+
+# Codigo del backend
+COPY backend/app ./app
+
+# Artefactos del modelo (rutas RELATIVAS a la raiz del ZIP)
+COPY weights/  ./weights/
+COPY vocab/    ./vocab/
+COPY config/   ./config/
+
+# El puerto debe coincidir con container.internal_port del manifest
+EXPOSE 8080
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+\end{Verbatim}
+\vspace{0.03cm}
+\hrule
+\captionof{figure}{Dockerfile de referencia para un backend Python/FastAPI}
+\end{minipage}
+\end{center}
+
+Tres advertencias que provienen de errores reales encontrados durante el desarrollo del sistema:
+
+\begin{itemize}[topsep=2pt]
+    \item \textbf{Librerías gráficas en imágenes slim.} Si el backend usa OpenCV o MediaPipe sobre \texttt{python:3.11-slim} (basada en Debian Bookworm), se necesitan \texttt{libgl1}, \texttt{libegl1} y \texttt{libgles2}. El paquete \texttt{libgl1-mesa-glx}, que aparece en muchos tutoriales antiguos, fue eliminado de Bookworm. Sin estas librerías, \texttt{import cv2} falla al arrancar el servidor y el contenedor nunca pasa el health check.
+    \item \textbf{Escuchar en \texttt{0.0.0.0}.} El servidor debe atender en todas las interfaces del contenedor, no en \texttt{localhost}, porque el middleware se comunica con él a través de la red Docker \texttt{elan-ai-shared} usando el nombre del contenedor.
+    \item \textbf{Coherencia de puertos.} El puerto del \texttt{EXPOSE}, el del \texttt{CMD} y el \texttt{internal\_port} del manifest deben ser el mismo. No hace falta publicar el puerto al host: la comunicación es interna a la red compartida.
+\end{itemize}
+
+% ------------------------------------------------------------
+%  7. Contrato HTTP del backend
+% ------------------------------------------------------------
+\section{Contrato HTTP del backend}
+
+Aquí está el corazón del manual. El backend debe exponer exactamente dos endpoints, con los formatos que se describen a continuación. Si estos formatos se respetan, el middleware puede orquestar el modelo sin conocer nada de su implementación interna.
+
+\subsection{\texttt{GET /health}: verificación de disponibilidad}
+
+El middleware consulta este endpoint en dos momentos: durante la instalación (para confirmar que la imagen construida arranca y carga sus pesos) y antes de cada inferencia (para confirmar que el contenedor sigue operativo). El sondeo se repite cada 250 milisegundos hasta que el backend responde o se agota el timeout.
+
+La respuesta esperada cuando el modelo está cargado y listo es:
+
+\begin{center}
+\begin{minipage}{0.9\textwidth}
+\small
+\begin{Verbatim}[baselinestretch=0.9]
+HTTP 200
+{"status": "ok"}
+\end{Verbatim}
+\end{minipage}
+\end{center}
+
+Si el modelo aún no terminó de cargar o hubo un error al cargar los pesos, el backend debe responder con un código 5xx e incluir un campo \texttt{detail} descriptivo:
+
+\begin{center}
+\begin{minipage}{0.9\textwidth}
+\small
+\begin{Verbatim}[baselinestretch=0.9]
+HTTP 503
+{"status": "error", "detail": "Model not loaded: <causa del error>"}
+\end{Verbatim}
+\end{minipage}
+\end{center}
+
+Ese campo \texttt{detail} no es decorativo: el middleware lo lee y lo propaga hasta el usuario, de modo que un mensaje claro aquí ahorra horas de depuración cuando los pesos no cargan.
+
+\subsection{\texttt{POST /infer}: ejecución de la inferencia}
+
+Para cada trabajo, el middleware envía al backend el siguiente payload JSON (los valores son ilustrativos):
+
+\begin{center}
+\begin{minipage}{0.92\textwidth}
+\hrule
+\vspace{0.06cm}
+\footnotesize
+\begin{Verbatim}[baselinestretch=0.8]
+{
+  "job_id": "job-test-001",
+  "media": {
+    "path": "/data/videos/mi_video.mp4"
+  },
+  "annotation": {
+    "target_tier": "AUTO_GLOSS_SEGMENTS",
+    "default_label": "LSEC_REGION",
+    "label_mode": "gloss_top1"
+  },
+  "parameters": {},
+  "model": {
+    "model_id": "mi_modelo_v1",
+    "version": "1.0.0"
+  },
+  "execution": {
+    "device_preference": "auto",
+    "runner": "auto",
+    "timeout_sec": 300
+  }
+}
+\end{Verbatim}
+\vspace{0.03cm}
+\hrule
+\captionof{figure}{Payload que el middleware envía a \texttt{POST /infer}}
+\end{minipage}
+\end{center}
+
+El campo realmente imprescindible para el backend es \texttt{media.path}: la ruta del video ya traducida al interior del contenedor (\texttt{/data/videos/...}). Los demás bloques llegan siempre presentes (aunque \texttt{parameters} puede venir vacío) y el backend es libre de usarlos o ignorarlos. Cuando la inferencia termina con éxito, la respuesta debe tener esta forma:
+
+\begin{center}
+\begin{minipage}{0.92\textwidth}
+\hrule
+\vspace{0.06cm}
+\footnotesize
+\begin{Verbatim}[baselinestretch=0.75]
+HTTP 200
+{
+  "output_type": "segments_with_gloss",
+  "media_info": {
+    "fps": 29.97,
+    "duration_ms": 5000,
+    "total_frames": 150
+  },
+  "segments": [
+    {
+      "start_ms": 500,
+      "end_ms": 1500,
+      "label": "AYUDAR",
+      "confidence": 0.85,
+      "predictions": [
+        {"rank": 1, "gloss_id": 16, "gloss": "AYUDAR",   "probability": 0.85},
+        {"rank": 2, "gloss_id": 10, "gloss": "TRABAJAR", "probability": 0.08},
+        {"rank": 3, "gloss_id": 2,  "gloss": "QUERER",   "probability": 0.04}
+      ]
+    }
+  ]
+}
+\end{Verbatim}
+\vspace{0.03cm}
+\hrule
+\captionof{figure}{Respuesta esperada de \texttt{POST /infer}}
+\end{minipage}
+\end{center}
+
+Si algo falla durante el procesamiento (por ejemplo, el video no puede abrirse), el backend debe responder con un código de error HTTP y un campo \texttt{detail}:
+
+\begin{center}
+\begin{minipage}{0.9\textwidth}
+\small
+\begin{Verbatim}[baselinestretch=0.9]
+HTTP 422
+{"detail": "Keypoint extraction failed: Cannot open video: ..."}
+\end{Verbatim}
+\end{minipage}
+\end{center}
+
+Al igual que en el health check, el middleware captura ese \texttt{detail} y lo entrega al usuario dentro de un error \texttt{INFERENCE\_ERROR}, así que conviene que el mensaje describa la causa real.
+
+\subsection{Campos obligatorios y reglas de validación de la respuesta}
+
+El middleware valida la respuesta del backend con los mismos esquemas Pydantic que usa para el resto del sistema. La tabla siguiente resume qué debe cumplir cada campo; una respuesta que no las respete hace fallar el trabajo aunque el backend haya devuelto HTTP 200.
+
+\begin{table}[H]
+\centering
+\caption{Campos de la respuesta de \texttt{/infer} y sus reglas de validación}
+\small
+\begin{tabular}{
+    >{\raggedright\arraybackslash}p{5.0cm}
+    >{\raggedright\arraybackslash}p{1.5cm}
+    >{\raggedright\arraybackslash}p{7.8cm}
+}
+\toprule
+\textbf{Campo} & \textbf{Tipo} & \textbf{Regla} \\
+\midrule
+\texttt{output\_type} & string & \texttt{"segments"} o \texttt{"segments\_with\_gloss"}. \\
+\texttt{media\_info.fps} & float & Mayor que 0. \\
+\texttt{media\_info.duration\_ms} & int & Mayor que 0. \\
+\texttt{media\_info.total\_frames} & int & Mayor que 0. \\
+\texttt{segments[].start\_ms} & int & Mayor o igual que 0. \\
+\texttt{segments[].end\_ms} & int & Estrictamente mayor que \texttt{start\_ms}. \\
+\texttt{segments[].label} & string & No vacío. \\
+\texttt{segments[].confidence} & float & Entre 0.0 y 1.0 inclusive. \\
+\texttt{segments[].predictions[]} & lista & Opcional; cada entrada con \texttt{rank} ($>$0), \texttt{gloss\_id}, \texttt{gloss} y \texttt{probability} (0.0--1.0). \\
+\texttt{segments[].segment\_id}, \texttt{start\_frame}, \texttt{end\_frame}, \texttt{duration\_frames} & int & Opcionales; si se envían \texttt{start\_frame} y \texttt{end\_frame}, debe cumplirse \texttt{end\_frame} $\geq$ \texttt{start\_frame}. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Una lista de segmentos vacía es válida: significa que el modelo no detectó regiones en el video, no que hubo un error.
+
+% ------------------------------------------------------------
+%  8. Backend mínimo de ejemplo
+% ------------------------------------------------------------
+\section{Backend mínimo de ejemplo (Python/FastAPI)}
+
+El siguiente código es un backend completo y funcional que cumple el contrato. Sirve como esqueleto: basta reemplazar el cuerpo de \texttt{infer()} por la lógica real del modelo.
+
+\begin{center}
+\begin{minipage}{0.94\textwidth}
+\hrule
+\vspace{0.06cm}
+\footnotesize
+\begin{Verbatim}[baselinestretch=0.78]
+# backend/app/main.py
+from contextlib import asynccontextmanager
+import logging
+
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+# --- Estado global del modelo ------------------------------------
+model = None
+_loaded = False
+_load_error = None
+
+def load_model():
+    global model, _loaded, _load_error
+    try:
+        import torch
+        model = torch.load("/model_service/weights/modelo.pt",
+                           map_location="cpu")
+        model.eval()
+        _loaded = True
+        logger.info("Modelo cargado correctamente.")
+    except Exception as exc:
+        _load_error = str(exc)
+        logger.error("Error al cargar el modelo: %s", exc)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    load_model()   # se carga UNA vez, al arrancar el contenedor
+    yield
+
+app = FastAPI(lifespan=lifespan)
+
+# --- Schemas de entrada ------------------------------------------
+class MediaInput(BaseModel):
+    path: str
+
+class InferRequest(BaseModel):
+    job_id: str
+    media: MediaInput
+    annotation: dict = {}
+    parameters: dict = {}
+    model: dict = {}
+    execution: dict = {}
+
+# --- Endpoints ----------------------------------------------------
+@app.get("/health")
+def health():
+    if _loaded:
+        return {"status": "ok"}
+    return JSONResponse(
+        status_code=503,
+        content={"status": "error",
+                 "detail": f"Model not loaded: {_load_error}"})
+
+@app.post("/infer")
+def infer(request: InferRequest):
+    video_path = request.media.path   # ej. /data/videos/mi_video.mp4
+
+    # 1. Abrir y procesar el video (OpenCV, MediaPipe, etc.)
+    # 2. Ejecutar la inferencia del modelo
+    # 3. Construir la lista de segmentos con el formato del contrato
+    segments = []
+
+    return {
+        "output_type": "segments_with_gloss",
+        "media_info": {"fps": 30.0,
+                       "duration_ms": 5000,
+                       "total_frames": 150},
+        "segments": segments,
+    }
+\end{Verbatim}
+\vspace{0.03cm}
+\hrule
+\captionof{figure}{Esqueleto mínimo de un backend compatible con el middleware}
+\end{minipage}
+\end{center}
+
+Nótese el patrón de carga: los pesos se cargan una sola vez en el evento de arranque (\texttt{lifespan}), no dentro de \texttt{infer()}. Así el costo de carga se paga en la instalación y las inferencias posteriores aprovechan el modelo ya residente en memoria, que es justamente lo que el middleware espera cuando reutiliza contenedores en caliente.
+
+% ------------------------------------------------------------
+%  9. Empaquetado e instalación
+% ------------------------------------------------------------
+\section{Empaquetado e instalación paso a paso}
+
+\subsection{Paso 1: crear el ZIP}
+
+Desde la carpeta que \textbf{contiene} el directorio del modelo, en PowerShell:
+
+\begin{center}
+\begin{minipage}{0.9\textwidth}
+\small
+\begin{Verbatim}[baselinestretch=0.9]
+Compress-Archive -Path mi_modelo_v1\* -DestinationPath mi_modelo_v1.zip
+\end{Verbatim}
+\end{minipage}
+\end{center}
+
+El detalle del \texttt{\textbackslash*} importa: con él, los archivos quedan directamente en la raíz del ZIP, que es donde el middleware busca el \texttt{manifest.json}. En Linux o macOS, el equivalente es entrar a la carpeta y ejecutar \texttt{zip -r ../mi\_modelo\_v1.zip .}
+
+\subsection{Paso 2: instalar el paquete}
+
+La vía normal es el gestor de modelos de ELAN: el usuario abre el panel de administración, selecciona el archivo \texttt{.zip} y pulsa instalar. Para pruebas durante el desarrollo resulta más cómodo hacerlo por línea de comandos:
+
+\begin{center}
+\begin{minipage}{0.9\textwidth}
+\small
+\begin{Verbatim}[baselinestretch=0.9]
+curl -X POST http://localhost:8000/api/v1/models/install \
+     -F "file=@mi_modelo_v1.zip"
+\end{Verbatim}
+\end{minipage}
+\end{center}
+
+Internamente, el middleware ejecuta esta secuencia:
+
+\begin{enumerate}[noitemsep, topsep=2pt]
+    \item Valida que el archivo sea un ZIP legible y localiza el \texttt{manifest.json}.
+    \item Valida el manifest contra el esquema y verifica que todos los \texttt{artifacts} existan.
+    \item Extrae el paquete a \texttt{installed/\{model\_id\}/\{version\}/} y registra el modelo en \texttt{registry.json}.
+    \item Construye la imagen con \texttt{docker build} (la primera vez puede tardar varios minutos, sobre todo si el \texttt{requirements.txt} incluye PyTorch).
+    \item Arranca el contenedor en la red \texttt{elan-ai-shared} con la carpeta de videos montada.
+    \item Sondea \texttt{GET /health} hasta que responda 200 o se agote \texttt{backend\_config.startup\_timeout\_sec}.
+    \item Guarda una copia del manifest en \texttt{data/bootstrap\_manifests/}, lo que permite reconstruir el registro automáticamente si el middleware se reinicia.
+\end{enumerate}
+
+Si todo sale bien, la respuesta es \texttt{200} con \texttt{\{"message": "Model installed successfully.", "model": \{...\}\}}. Si el build, el arranque o el health check fallan, el middleware hace \textbf{rollback} (elimina la entrada del registro y los archivos extraídos) y responde \texttt{400 MODEL\_PACKAGE\_INVALID} con el detalle del fallo, dejando el sistema en el mismo estado que antes del intento.
+
+\subsection{Paso 3: verificar y probar}
+
+Primero conviene confirmar que el modelo aparece listado y disponible:
+
+\begin{center}
+\begin{minipage}{0.9\textwidth}
+\small
+\begin{Verbatim}[baselinestretch=0.9]
+curl http://localhost:8000/api/v1/models
+\end{Verbatim}
+\end{minipage}
+\end{center}
+
+Y luego lanzar una inferencia de prueba con un video colocado en la carpeta configurada como \texttt{MIDDLEWARE\_VIDEOS\_DIR}:
+
+\begin{center}
+\begin{minipage}{0.92\textwidth}
+\hrule
+\vspace{0.06cm}
+\footnotesize
+\begin{Verbatim}[baselinestretch=0.8]
+curl -X POST http://localhost:8000/api/v1/jobs/segment-video \
+     -H "Content-Type: application/json" \
+     -d '{
+       "job_id": "test-001",
+       "media": {"path": "/data/videos/mi_video.mp4"},
+       "annotation": {
+         "target_tier": "AUTO_SEGMENTS",
+         "default_label": "REGION",
+         "label_mode": "gloss_top1"
+       },
+       "model": {"model_id": "mi_modelo_v1", "version": "1.0.0"},
+       "execution": {"timeout_sec": 300}
+     }'
+\end{Verbatim}
+\vspace{0.03cm}
+\hrule
+\captionof{figure}{Inferencia de prueba contra el middleware}
+\end{minipage}
+\end{center}
+
+Un dato útil: en \texttt{media.path} también se acepta la ruta del host (por ejemplo \texttt{C:/Users/usuario/Videos/mi\_video.mp4}). Si esa ruta está dentro de la carpeta configurada como \texttt{MIDDLEWARE\_VIDEOS\_DIR}, el middleware la traduce automáticamente a su equivalente interno \texttt{/data/videos/...} antes de enviarla al backend.
+
+% ------------------------------------------------------------
+%  10. Checklist
+% ------------------------------------------------------------
+\section{Lista de verificación antes de entregar el ZIP}
+
+Antes de dar por terminado el paquete, se recomienda repasar esta lista. Cada punto corresponde a una validación real del middleware o a un fallo observado en la práctica:
+
+\begin{itemize}[noitemsep, topsep=2pt]
+    \item[$\square$] \texttt{manifest.json} está en la raíz del ZIP (no dentro de subcarpetas).
+    \item[$\square$] \texttt{runtime} tiene exactamente \texttt{mode: docker}, \texttt{framework: container}, \texttt{runner: docker\_http}.
+    \item[$\square$] \texttt{model\_id} y \texttt{version} usan solo caracteres permitidos y la combinación no está ya instalada.
+    \item[$\square$] \texttt{backend\_config.docker\_image\_name} está en minúsculas y sin espacios.
+    \item[$\square$] Todos los archivos declarados en \texttt{artifacts} existen dentro del ZIP.
+    \item[$\square$] El \texttt{Dockerfile} expone el mismo puerto que \texttt{container.internal\_port} y el servidor escucha en \texttt{0.0.0.0}.
+    \item[$\square$] \texttt{GET /health} devuelve 200 solo cuando los pesos ya cargaron, y 503 con \texttt{detail} si algo falló.
+    \item[$\square$] \texttt{POST /infer} devuelve \texttt{output\_type}, \texttt{media\_info} y \texttt{segments} con las reglas de la Tabla 2.
+    \item[$\square$] Cada segmento cumple \texttt{start\_ms} $<$ \texttt{end\_ms} y \texttt{confidence} entre 0 y 1.
+    \item[$\square$] Las librerías del sistema que necesitan OpenCV/MediaPipe están en el \texttt{Dockerfile}.
+    \item[$\square$] El contenedor arranca sin crashear y responde \texttt{/health} de forma estable.
+\end{itemize}
+
+% ------------------------------------------------------------
+%  11. Errores comunes
+% ------------------------------------------------------------
+\section{Diagnóstico de errores comunes}
+
+Cuando la instalación o la inferencia fallan, el middleware siempre responde con un JSON de la forma \texttt{\{"error\_code": "...", "detail": "..."\}}. La tabla siguiente relaciona los códigos que un desarrollador de backend verá con más frecuencia, su causa habitual y la acción correctiva.
+
+\begin{table}[H]
+\centering
+\caption{Códigos de error frecuentes durante el desarrollo de un backend}
+\footnotesize
+\begin{tabular}{
+    >{\raggedright\arraybackslash}p{4.6cm}
+    >{\centering\arraybackslash}p{1.0cm}
+    >{\raggedright\arraybackslash}p{8.6cm}
+}
+\toprule
+\textbf{error\_code} & \textbf{HTTP} & \textbf{Causa habitual y solución} \\
+\midrule
+\texttt{MODEL\_MANIFEST\_NOT\_FOUND} & 400 & El \texttt{manifest.json} no está en la raíz del ZIP. Rehacer el ZIP comprimiendo el contenido de la carpeta, no la carpeta anidada dos veces. \\
+\texttt{MODEL\_MANIFEST\_INVALID} & 400 & Algún campo del manifest viola el esquema (task no permitido, patrón de \texttt{model\_id}, etc.). El \texttt{detail} indica el campo exacto. \\
+\texttt{MODEL\_ARTIFACT\_MISSING} & 400 & Un archivo declarado en \texttt{artifacts} no existe en el ZIP. Corregir la ruta o incluir el archivo. \\
+\texttt{MODEL\_PACKAGE\_INVALID} & 400 & El build, el arranque o el health check fallaron durante la instalación (ya se hizo rollback). Revisar \texttt{docker logs} del contenedor del modelo. \\
+\texttt{MODEL\_ALREADY\_EXISTS} & 409 & Ya hay un modelo con el mismo \texttt{model\_id} y \texttt{version}. Subir la versión en el manifest o desinstalar el anterior. \\
+\texttt{MODEL\_DISABLED} & 409 & El modelo está instalado pero desactivado. Reactivarlo desde el gestor de ELAN o vía \texttt{PATCH /api/v1/models/\{id\}/status}. \\
+\texttt{INFERENCE\_ERROR} & 502 & El backend respondió un error en \texttt{/infer}; el \texttt{detail} contiene el mensaje original del backend. \\
+\texttt{DOCKER\_TIMEOUT} & 504 & La inferencia superó \texttt{execution.timeout\_sec}. Optimizar el backend o aumentar el timeout de la petición. \\
+\texttt{HEALTHCHECK\_FAILED} & 502 & El contenedor corre pero \texttt{/health} no responde 200. Casi siempre: pesos que no cargan o librerías del sistema faltantes. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Para cualquier fallo relacionado con el contenedor, el primer reflejo debe ser mirar sus logs. El middleware nombra los contenedores con un patrón predecible:
+
+\begin{center}
+\begin{minipage}{0.9\textwidth}
+\small
+\begin{Verbatim}[baselinestretch=0.9]
+docker logs elan-ai-model-<model_id>-<version>
+# Ejemplo:
+docker logs elan-ai-model-mi_modelo_v1-1.0.0
+\end{Verbatim}
+\end{minipage}
+\end{center}
+
+Allí aparecen los errores de importación de librerías, los fallos de carga de pesos (por ejemplo, un \textit{state\_dict mismatch} cuando los nombres de capas del archivo \texttt{.pt} no coinciden con la clase definida en el código) y cualquier traza de excepción del backend. Con esa información, el ciclo de corrección es siempre el mismo: ajustar el código o el \texttt{Dockerfile}, rehacer el ZIP y volver a instalar.
+
+% ------------------------------------------------------------
+%  Cierre
+% ------------------------------------------------------------
+\section{Resumen}
+
+Integrar un modelo nuevo al ecosistema ELAN--middleware se reduce a cuatro compromisos: empaquetar los archivos con la estructura de la Sección 4, describir el modelo en un \texttt{manifest.json} válido (Sección 5), construir una imagen Docker que arranque un servidor HTTP en el puerto declarado (Sección 6) y respetar el contrato de \texttt{/health} y \texttt{/infer} (Sección 7). Todo lo demás --- registro, construcción de la imagen, ciclo de vida del contenedor, colas, timeouts y presentación de resultados en ELAN --- lo resuelve el middleware. Esa separación de responsabilidades es, precisamente, lo que permite que el sistema crezca con nuevos modelos sin modificar ni una línea de su código.
+
+\end{document}

@@ -1,39 +1,28 @@
-\section*{ANEXO A}
-\addcontentsline{toc}{section}{ANEXO A}
+% ============================================================
+%  ANEXOS
+%  Cada anexo tiene un solo título (sin negrilla) y se desarrolla
+%  en prosa continua, sin subtítulos internos. Las tablas y los
+%  códigos se numeran por anexo: Tabla A.1, Código B.2, etc.
+% ============================================================
 
-\renewcommand{\thesubsection}{A.\arabic{subsection}}
-\renewcommand{\thesubsubsection}{A.\arabic{subsection}.\arabic{subsubsection}}
-\renewcommand{\theHsubsection}{A.\arabic{subsection}}
-\renewcommand{\theHsubsubsection}{A.\arabic{subsection}.\arabic{subsubsection}}
-\setcounter{subsection}{0}
-\setcounter{subsubsection}{0}
-
-\subsection{Esquema completo del archivo \textbf{manifest.json}}
+\section*{\normalfont ANEXO A. Esquema completo del archivo manifest.json}
+\addcontentsline{toc}{section}{ANEXO A. Esquema completo del archivo manifest.json}
 \label{anx:manifest_schema}
+
+\renewcommand{\thetable}{A.\arabic{table}}
+\setcounter{table}{0}
+\renewcommand{\thecodigo}{A.\arabic{codigo}}
+\setcounter{codigo}{0}
+\renewcommand{\thefigure}{A.\arabic{figure}}
+\setcounter{figure}{0}
 
 El archivo \textbf{manifest.json} funciona como el contrato de empaquetado de cada modelo. Debe ubicarse en la raíz del paquete ZIP para que el middleware pueda reconocerlo, validar su estructura e instalarlo de forma controlada. Durante la instalación, el servicio registra su contenido en \textbf{data/models\_store/registry.json} y guarda una copia en \textbf{data/bootstrap\_manifests/}; de esta manera, el registro puede reconstruirse automáticamente si se pierde o se reinicia el entorno.
 
-\subsubsection{Estructura general}
-
-El documento JSON se organiza en campos de primer nivel que describen la identidad del modelo, su forma de ejecución, sus artefactos y los valores que verá el usuario en ELAN:
-
-\begin{enumerate}[noitemsep, topsep=0pt, parsep=0pt, partopsep=0pt]
-    \item \textbf{model\_id}: identificador único del modelo dentro del registro.
-    \item \textbf{name}: nombre legible por el usuario, mostrado en la interfaz de ELAN.
-    \item \textbf{version}: versión semántica del modelo, por ejemplo, \textbf{1.0.0}.
-    \item \textbf{task}: tipo de tarea que realiza el modelo.
-    \item \textbf{runtime}: modo de ejecución y tipo de runner.
-    \item \textbf{artifacts}: mapa de rutas relativas a los artefactos del paquete.
-    \item \textbf{input\_contract} y \textbf{output\_contract}: describen el medio de entrada y el tipo de salida que produce el modelo.
-    \item \textbf{container}: configuración de red del contenedor Docker. Es obligatorio cuando se utiliza \textbf{runner: docker\_http}.
-    \item \textbf{ui}: valores predeterminados para el panel de configuración de ELAN.
-\end{enumerate}
-
-\subsubsection{Definición de campos}
+El documento JSON se organiza en campos de primer nivel que describen la identidad del modelo, su forma de ejecución, sus artefactos y los valores que verá el usuario en ELAN: \textbf{model\_id} (identificador único dentro del registro), \textbf{name} (nombre legible mostrado en ELAN), \textbf{version} (versión semántica, por ejemplo \textbf{1.0.0}), \textbf{task} (tipo de tarea que realiza el modelo), \textbf{runtime} (modo de ejecución y tipo de runner), \textbf{artifacts} (mapa de rutas relativas a los artefactos del paquete), \textbf{input\_contract} y \textbf{output\_contract} (medio de entrada y tipo de salida), \textbf{container} (configuración de red del contenedor, obligatoria cuando se usa el runner \textbf{docker\_http}) y \textbf{ui} (valores predeterminados para el panel de configuración de ELAN). La Tabla~\ref{tab:manifest_root} detalla cada campo del objeto raíz, su tipo y su obligatoriedad.
 
 \begin{table}[H]
 \centering
-\caption{Campos del objeto raíz del \textbf{manifest.json}}
+\caption{Campos del objeto raíz del \texttt{manifest.json}}
 \label{tab:manifest_root}
 \scriptsize
 \renewcommand{\arraystretch}{1.08}
@@ -63,20 +52,13 @@ El documento JSON se organiza en campos de primer nivel que describen la identid
 \end{tabular}
 \end{table}
 
-\subsubsection{Valores admitidos para \textbf{task}}
+Respecto del campo \textbf{task}, el esquema \textbf{ModelManifest} del middleware acepta exactamente dos valores; cualquier otro provoca el rechazo del paquete durante la validación. El valor \textbf{video\_segmentation} indica que el modelo detecta regiones temporales en el video sin clasificar su contenido semántico, mientras que \textbf{video\_segmentation\_and\_gloss\_classification} indica que, además de detectar las regiones, el modelo asigna una glosa de lengua de señas a cada segmento; este último valor corresponde al modelo de referencia del trabajo.
 
-El esquema \textbf{ModelManifest} del middleware acepta exactamente dos valores para este campo; cualquier otro provoca el rechazo del paquete durante la validación:
-
-\begin{itemize}[noitemsep, topsep=0pt, parsep=0pt, partopsep=0pt]
-    \item \textbf{video\_segmentation}: el modelo detecta regiones temporales en el video sin clasificar su contenido semántico.
-    \item \textbf{video\_segmentation\_and\_gloss\_classification}: el modelo detecta regiones temporales y asigna una glosa de lengua de señas a cada segmento. Este valor corresponde al modelo de referencia.
-\end{itemize}
-
-\subsubsection{Objeto \textbf{runtime}}
+El objeto \textbf{runtime} declara cómo debe ejecutarse el backend. Sus tres campos se resumen en la Tabla~\ref{tab:manifest_runtime}: el modo de ejecución (actualmente solo se soporta \textbf{docker}), el tipo de contenedor (reservado para extensiones futuras) y el identificador del runner del middleware encargado de iniciar el contenedor y llamar a los endpoints del backend.
 
 \begin{table}[H]
 \centering
-\caption{Campos del objeto \textbf{runtime}}
+\caption{Campos del objeto \texttt{runtime}}
 \label{tab:manifest_runtime}
 \scriptsize
 \renewcommand{\arraystretch}{1.08}
@@ -98,13 +80,11 @@ El esquema \textbf{ModelManifest} del middleware acepta exactamente dos valores 
 \end{tabular}
 \end{table}
 
-\subsubsection{Objeto \textbf{artifacts}}
-
-El middleware no interpreta el contenido de estos artefactos; su función es conservar las rutas declaradas para que el \textbf{Dockerfile} del paquete pueda construir la imagen del backend con los archivos correctos. Las claves del mapa actúan como nombres semánticos definidos por el autor del modelo, mientras que los valores apuntan a rutas relativas dentro del paquete. Durante la instalación se comprueba que cada archivo declarado exista dentro del ZIP y que ninguna ruta sea absoluta ni contenga \textbf{../}; si alguna condición falla, el paquete se rechaza antes de construir la imagen.
+En cuanto al objeto \textbf{artifacts}, el middleware no interpreta el contenido de los artefactos; su función es conservar las rutas declaradas para que el \textbf{Dockerfile} del paquete pueda construir la imagen del backend con los archivos correctos. Las claves del mapa actúan como nombres semánticos definidos por el autor del modelo, mientras que los valores apuntan a rutas relativas dentro del paquete. Durante la instalación se comprueba que cada archivo declarado exista dentro del ZIP y que ninguna ruta sea absoluta ni contenga \textbf{../}; si alguna condición falla, el paquete se rechaza antes de construir la imagen. La Tabla~\ref{tab:manifest_artifacts} enumera los artefactos del modelo de referencia y su propósito.
 
 \begin{table}[H]
 \centering
-\caption{Artefactos del modelo de referencia \textbf{lsec\_bio\_gloss\_final\_v1}}
+\caption{Artefactos del modelo de referencia \texttt{lsec\_bio\_gloss\_final\_v1}}
 \label{tab:manifest_artifacts}
 \scriptsize
 \renewcommand{\arraystretch}{1.08}
@@ -128,13 +108,11 @@ El middleware no interpreta el contenido de estos artefactos; su función es con
 \end{tabular}
 \end{table}
 
-\subsubsection{Objeto \textbf{container}}
-
-Este objeto es obligatorio cuando \textbf{runtime.runner = docker\_http}, porque reúne los datos que el \textbf{DockerRunner} necesita para iniciar el backend, comprobar su disponibilidad y enviarle las solicitudes de inferencia.
+El objeto \textbf{container} es obligatorio cuando \textbf{runtime.runner = docker\_http}, porque reúne los datos que el \textbf{DockerRunner} necesita para iniciar el backend, comprobar su disponibilidad y enviarle las solicitudes de inferencia. Sus campos se describen en la Tabla~\ref{tab:manifest_container}.
 
 \begin{table}[H]
 \centering
-\caption{Campos del objeto \textbf{container}}
+\caption{Campos del objeto \texttt{container}}
 \label{tab:manifest_container}
 \scriptsize
 \renewcommand{\arraystretch}{1.08}
@@ -162,13 +140,11 @@ Este objeto es obligatorio cuando \textbf{runtime.runner = docker\_http}, porque
 \end{tabular}
 \end{table}
 
-\subsubsection{Objeto \textbf{ui}}
-
-Los valores de este objeto se cargan automáticamente en el panel \textbf{AIOrchestrationRecognizerPanel} cuando el usuario selecciona un modelo en ELAN. Con ello se evita repetir configuraciones básicas en cada ejecución y se mantiene una experiencia más cercana al flujo habitual de anotación.
+Por último, los valores del objeto \textbf{ui} se cargan automáticamente en el panel \textbf{AIOrchestrationRecognizerPanel} cuando el usuario selecciona un modelo en ELAN. Con ello se evita repetir configuraciones básicas en cada ejecución y se mantiene una experiencia más cercana al flujo habitual de anotación. Sus campos se resumen en la Tabla~\ref{tab:manifest_ui}.
 
 \begin{table}[H]
 \centering
-\caption{Campos del objeto \textbf{ui}}
+\caption{Campos del objeto \texttt{ui}}
 \label{tab:manifest_ui}
 \scriptsize
 \renewcommand{\arraystretch}{1.08}
@@ -190,9 +166,7 @@ Los valores de este objeto se cargan automáticamente en el panel \textbf{AIOrch
 \end{tabular}
 \end{table}
 
-\subsubsection{Ejemplo completo: \textbf{lsec\_bio\_gloss\_final\_v1}}
-
-El siguiente listado presenta el \textbf{manifest.json} completo del modelo de referencia utilizado en la validación del sistema. Al incluirse en la raíz del paquete ZIP, este archivo se convierte en la fuente de información que guía la instalación, el registro del modelo y la configuración inicial mostrada en ELAN. Nótese la diferencia entre los dos timeouts de arranque: \textbf{backend\_config} usa 180 segundos porque durante la instalación el backend carga los pesos por primera vez, mientras que \textbf{container} usa 30 segundos porque en cada inferencia el contenedor ya debería estar preparado.
+Para cerrar el anexo, el Código~\ref{fig:manifest_ejemplo} presenta el \textbf{manifest.json} completo del modelo de referencia utilizado en la validación del sistema. Al incluirse en la raíz del paquete ZIP, este archivo se convierte en la fuente de información que guía la instalación, el registro del modelo y la configuración inicial mostrada en ELAN. Nótese la diferencia entre los dos timeouts de arranque: \textbf{backend\_config} usa 180 segundos porque durante la instalación el backend carga los pesos por primera vez, mientras que \textbf{container} usa 30 segundos porque en cada inferencia el contenedor ya debería estar preparado.
 
 \begin{center}
 \begin{minipage}{0.96\textwidth}
@@ -254,7 +228,7 @@ El siguiente listado presenta el \textbf{manifest.json} completo del modelo de r
 \vspace{0.03cm}
 \hrule
 
-\captionof{figure}{Manifest del modelo \textbf{lsec\_bio\_gloss\_final\_v1} v1.0.0}
+\captionof{codigo}{Manifest del modelo \texttt{lsec\_bio\_gloss\_final\_v1} v1.0.0}
 \label{fig:manifest_ejemplo}
 \end{minipage}
 \end{center}
@@ -263,22 +237,20 @@ El siguiente listado presenta el \textbf{manifest.json} completo del modelo de r
 %  Anexo B — Ejemplo completo de respuesta JSON de inferencia
 % ============================================================
 
-\section*{ANEXO B}
-\addcontentsline{toc}{section}{ANEXO B}
-
-\renewcommand{\thesubsection}{B.\arabic{subsection}}
-\renewcommand{\thesubsubsection}{B.\arabic{subsection}.\arabic{subsubsection}}
-\renewcommand{\theHsubsection}{B.\arabic{subsection}}
-\renewcommand{\theHsubsubsection}{B.\arabic{subsection}.\arabic{subsubsection}}
-\setcounter{subsection}{0}
-\setcounter{subsubsection}{0}
-
-\subsection{Ejemplo completo de respuesta JSON de inferencia}
+\section*{\normalfont ANEXO B. Ejemplo completo de respuesta JSON de inferencia}
+\addcontentsline{toc}{section}{ANEXO B. Ejemplo completo de respuesta JSON de inferencia}
 \label{anx:respuesta_json}
+
+\renewcommand{\thetable}{B.\arabic{table}}
+\setcounter{table}{0}
+\renewcommand{\thecodigo}{B.\arabic{codigo}}
+\setcounter{codigo}{0}
+\renewcommand{\thefigure}{B.\arabic{figure}}
+\setcounter{figure}{0}
 
 Este anexo muestra una respuesta exitosa del endpoint \textbf{POST /api/v1/jobs/segment-video} del middleware. El ejemplo conserva los campos definidos en el esquema \textbf{SegmentVideoResponse} del archivo \textbf{middleware/app/schemas/jobs.py} y corresponde a una inferencia del modelo \textbf{lsec\_bio\_gloss\_final\_v1} v1.0.0 sobre un video corto de prueba de la LSEc. La intención es dejar claro cómo viajan los resultados desde el backend de IA hasta el formato que luego puede transformarse en anotaciones de ELAN.
 
-\subsubsection{Request enviado}
+El intercambio comienza con la solicitud que el cliente envía al middleware, reproducida en el Código~\ref{fig:request_inferencia}.
 
 \begin{center}
 \begin{minipage}{0.96\textwidth}
@@ -313,14 +285,12 @@ Content-Type: application/json
 \vspace{0.03cm}
 \hrule
 
-\captionof{figure}{Request de inferencia enviado al endpoint \textbf{POST /api/v1/jobs/segment-video}}
+\captionof{codigo}{Request de inferencia enviado al endpoint \texttt{POST /api/v1/jobs/segment-video}}
 \label{fig:request_inferencia}
 \end{minipage}
 \end{center}
 
-\subsubsection{Respuesta completa HTTP 200}
-
-La respuesta incluye cinco campos de primer nivel: \textbf{job\_id}, \textbf{status}, \textbf{media\_info}, \textbf{segments} y \textbf{trace}. Los cuatro primeros identifican el trabajo, su estado, el video procesado y los segmentos obtenidos. El campo \textbf{trace}, por su parte, agrega el historial de estados, los tiempos de cada etapa del pipeline y los metadatos necesarios para observar la ejecución del contenedor Docker. Por brevedad, el listado muestra solo el primero de los cuatro segmentos detectados (\textbf{n\_detected\_segments}); los restantes siguen exactamente la misma estructura.
+La respuesta correspondiente, con estado HTTP 200, incluye cinco campos de primer nivel: \textbf{job\_id}, \textbf{status}, \textbf{media\_info}, \textbf{segments} y \textbf{trace}. Los cuatro primeros identifican el trabajo, su estado, el video procesado y los segmentos obtenidos. El campo \textbf{trace}, por su parte, agrega el historial de estados, los tiempos de cada etapa del pipeline y los metadatos necesarios para observar la ejecución del contenedor Docker. Por brevedad, el Código~\ref{fig:respuesta_inferencia} muestra solo el primero de los cuatro segmentos detectados (\textbf{n\_detected\_segments}); los restantes siguen exactamente la misma estructura.
 
 \begin{center}
 \begin{minipage}{0.9\textwidth}
@@ -413,16 +383,16 @@ Content-Type: application/json
 \vspace{0.03cm}
 \hrule
 
-\captionof{figure}{Respuesta completa de inferencia exitosa HTTP 200}
+\captionof{codigo}{Respuesta completa de inferencia exitosa HTTP 200}
 \label{fig:respuesta_inferencia}
 \end{minipage}
 \end{center}
 
-\subsubsection{Descripción de los campos del objeto \textbf{trace}}
+Para interpretar la respuesta, la Tabla~\ref{tab:trace_campos} describe cada campo del objeto \textbf{trace}, que concentra la información de trazabilidad de la ejecución.
 
 \begin{table}[H]
 \centering
-\caption{Campos del objeto \textbf{trace} en la respuesta de inferencia}
+\caption{Campos del objeto \texttt{trace} en la respuesta de inferencia}
 \label{tab:trace_campos}
 \scriptsize
 \renewcommand{\arraystretch}{1.08}
@@ -455,13 +425,11 @@ Content-Type: application/json
 \end{tabular}
 \end{table}
 
-\subsubsection{Desglose del objeto \textbf{stages}}
-
-El objeto \textbf{stages} corresponde al esquema \textbf{StageMetrics} definido en \textbf{middleware/app/schemas/metrics.py}. Su utilidad principal es separar la latencia total en dos niveles: las etapas propias del orquestador y las etapas internas del pipeline de IA. Esta separación facilita identificar si el tiempo de respuesta se consume en validación, espera, comunicación con Docker o procesamiento del modelo.
+Dentro de \textbf{trace}, el objeto \textbf{stages} corresponde al esquema \textbf{StageMetrics} definido en \textbf{middleware/app/schemas/metrics.py}. Su utilidad principal es separar la latencia total en dos niveles: las etapas propias del orquestador y las etapas internas del pipeline de IA. Esta separación facilita identificar si el tiempo de respuesta se consume en validación, espera, comunicación con Docker o procesamiento del modelo. El significado de cada campo se presenta en la Tabla~\ref{tab:stages_campos}.
 
 \begin{table}[H]
 \centering
-\caption{Significado de los campos del objeto \textbf{stages}}
+\caption{Significado de los campos del objeto \texttt{stages}}
 \label{tab:stages_campos}
 \scriptsize
 \renewcommand{\arraystretch}{1.08}
@@ -496,22 +464,18 @@ El objeto \textbf{stages} corresponde al esquema \textbf{StageMetrics} definido 
 %  Anexo C — Configuración completa del docker-compose.yml
 % ============================================================
 
-\section*{ANEXO C}
-\addcontentsline{toc}{section}{ANEXO C}
-
-\renewcommand{\thesubsection}{C.\arabic{subsection}}
-\renewcommand{\thesubsubsection}{C.\arabic{subsection}.\arabic{subsubsection}}
-\renewcommand{\theHsubsection}{C.\arabic{subsection}}
-\renewcommand{\theHsubsubsection}{C.\arabic{subsection}.\arabic{subsubsection}}
-\setcounter{subsection}{0}
-\setcounter{subsubsection}{0}
-
-\subsection{Configuración completa del \textbf{docker-compose.yml} del middleware}
+\section*{\normalfont ANEXO C. Configuración del docker-compose.yml del middleware}
+\addcontentsline{toc}{section}{ANEXO C. Configuración del docker-compose.yml del middleware}
 \label{anx:docker_compose}
 
-El archivo \textbf{docker-compose.yml} reúne la configuración necesaria para ejecutar el middleware como servicio local y conectarlo con los contenedores de modelos de IA. Es el mecanismo recomendado para el despliegue, porque concentra en un solo lugar el ciclo de vida del contenedor, las variables de entorno, los bind mounts de persistencia y la red compartida \textbf{elan-ai-shared}.
+\renewcommand{\thetable}{C.\arabic{table}}
+\setcounter{table}{0}
+\renewcommand{\thecodigo}{C.\arabic{codigo}}
+\setcounter{codigo}{0}
+\renewcommand{\thefigure}{C.\arabic{figure}}
+\setcounter{figure}{0}
 
-\subsubsection{Archivo \textbf{docker-compose.yml} completo}
+El archivo \textbf{docker-compose.yml} reúne la configuración necesaria para ejecutar el middleware como servicio local y conectarlo con los contenedores de modelos de IA. Es el mecanismo recomendado para el despliegue, porque concentra en un solo lugar el ciclo de vida del contenedor, las variables de entorno, los bind mounts de persistencia y la red compartida \textbf{elan-ai-shared}. El Código~\ref{fig:docker_compose} reproduce el archivo completo utilizado durante el desarrollo y la validación.
 
 \begin{center}
 \begin{minipage}{0.96\textwidth}
@@ -568,12 +532,12 @@ networks:
 \vspace{0.03cm}
 \hrule
 
-\captionof{figure}{Archivo \textbf{docker-compose.yml} del middleware}
+\captionof{codigo}{Archivo \texttt{docker-compose.yml} del middleware}
 \label{fig:docker_compose}
 \end{minipage}
 \end{center}
 
-\subsubsection{Variables de entorno}
+Las variables de entorno del servicio se describen en la Tabla~\ref{tab:env_vars}. Las variables que no aparecen declaradas en el archivo, como \textbf{MIDDLEWARE\_MAX\_CONCURRENT\_JOBS}, toman su valor por defecto desde \textbf{app/core/config.py}; para modificarlas basta con añadirlas a la sección \textbf{environment} del servicio y reiniciar el contenedor.
 
 \begin{table}[H]
 \centering
@@ -630,11 +594,7 @@ Número máximo de inferencias simultáneas. Controla el acceso concurrente a GP
 \end{tabular}
 \end{table}
 
-Las variables que no aparecen declaradas en el archivo, como \textbf{MIDDLEWARE\_MAX\_CONCURRENT\_JOBS}, toman su valor por defecto desde \textbf{app/core/config.py}. Para modificarlas basta con añadirlas a la sección \textbf{environment} del servicio y reiniciar el contenedor.
-
-\subsubsection{Bind mounts de persistencia}
-
-La configuración utiliza únicamente bind mounts, es decir, directorios del equipo anfitrión montados dentro del contenedor. Esta decisión evita depender de volúmenes Docker con nombre y facilita revisar los archivos directamente desde el sistema operativo. Además, los datos de modelos y manifests se conservan incluso después de detener el servicio o limpiar volúmenes desde Docker.
+La configuración utiliza únicamente bind mounts, es decir, directorios del equipo anfitrión montados dentro del contenedor. Esta decisión evita depender de volúmenes Docker con nombre y facilita revisar los archivos directamente desde el sistema operativo. Además, los datos de modelos y manifests se conservan incluso después de detener el servicio o limpiar volúmenes desde Docker. Los tres montajes utilizados y su propósito se detallan en la Tabla~\ref{tab:bind_mounts}.
 
 \begin{table}[H]
 \centering
@@ -667,11 +627,7 @@ Socket del daemon Docker. Permite al middleware construir imágenes y gestionar 
 \end{tabular}
 \end{table}
 
-\subsubsection{Red Docker \textbf{elan-ai-shared}}
-
-La red \textbf{elan-ai-shared} conserva un nombre fijo, independiente del prefijo que Docker Compose asigna al proyecto. Esto permite que los contenedores de modelo, creados dinámicamente por el SDK de Docker durante la inferencia, se unan a la misma red sin configuraciones adicionales. Una vez conectados, el middleware puede comunicarse con cada backend por su nombre de contenedor mediante la resolución DNS interna de Docker, sin exponer puertos innecesarios en el host.
-
-\subsubsection{Comandos de operación}
+En cuanto a la red, \textbf{elan-ai-shared} conserva un nombre fijo, independiente del prefijo que Docker Compose asigna al proyecto. Esto permite que los contenedores de modelo, creados dinámicamente por el SDK de Docker durante la inferencia, se unan a la misma red sin configuraciones adicionales. Una vez conectados, el middleware puede comunicarse con cada backend por su nombre de contenedor mediante la resolución DNS interna de Docker, sin exponer puertos innecesarios en el host. Los comandos más frecuentes durante la operación del servicio se resumen en el Código~\ref{fig:compose_cmds}.
 
 \begin{center}
 \begin{minipage}{0.90\textwidth}
@@ -703,36 +659,33 @@ curl http://127.0.0.1:8000/api/v1/metrics
 \vspace{0.03cm}
 \hrule
 
-\captionof{figure}{Comandos Docker Compose más frecuentes durante la operación}
+\captionof{codigo}{Comandos Docker Compose más frecuentes durante la operación}
 \label{fig:compose_cmds}
 \end{minipage}
 \end{center}
 
-\subsubsection{Consideraciones de seguridad y red}
-
-El puerto 8000 del middleware se expone únicamente en la interfaz de loopback del host, mediante \textbf{127.0.0.1:8000}. Con esta decisión, el servicio queda disponible para ELAN en la misma máquina, pero no para otros equipos de la red local. Esta restricción encaja con el escenario previsto del TIC, en el que el investigador ejecuta ELAN, el middleware y Docker en su propio equipo de trabajo.
+Respecto de la seguridad y la red, el puerto 8000 del middleware se expone únicamente en la interfaz de loopback del host, mediante \textbf{127.0.0.1:8000}. Con esta decisión, el servicio queda disponible para ELAN en la misma máquina, pero no para otros equipos de la red local. Esta restricción encaja con el escenario previsto del TIC, en el que el investigador ejecuta ELAN, el middleware y Docker en su propio equipo de trabajo. Si se quisiera que otras estaciones con ELAN consumieran el mismo middleware, como se plantea en las recomendaciones, bastaría con cambiar la publicación del puerto de \textbf{"127.0.0.1:8000:8000"} a \textbf{"8000:8000"} y apuntar la URL del panel del reconocedor a la dirección IP del servidor; en ese caso se recomienda añadir mecanismos de autenticación y cifrado si la red no es de confianza, además de ajustar \textbf{MIDDLEWARE\_MAX\_CONCURRENT\_JOBS} a la capacidad del equipo.
 
 El socket de Docker montado en el servicio entrega al contenedor del middleware un nivel de control amplio sobre el daemon Docker del host. Para un entorno local y controlado, esta decisión simplifica la construcción y ejecución de modelos; sin embargo, en escenarios compartidos o multiusuario conviene restringir ese acceso mediante un proxy de Docker, como \textbf{Tecnativa Docker Socket Proxy}, o migrar a la API REST de Docker Engine con autenticación TLS.
 
 % ============================================================
 %  Anexo D — Instrucciones de compilación e integración en ELAN 7.1
 % ============================================================
-\section*{ANEXO D}
-\addcontentsline{toc}{section}{ANEXO D}
 
-\renewcommand{\thesubsection}{D.\arabic{subsection}}
-\renewcommand{\thesubsubsection}{D.\arabic{subsection}.\arabic{subsubsection}}
-\renewcommand{\theHsubsection}{D.\arabic{subsection}}
-\renewcommand{\theHsubsubsection}{D.\arabic{subsection}.\arabic{subsubsection}}
-\setcounter{subsection}{0}
-\setcounter{subsubsection}{0}
-
-\subsection{Instrucciones de compilación e integración con ELAN}
+\section*{\normalfont ANEXO D. Compilación e integración del reconocedor en ELAN 7.1}
+\addcontentsline{toc}{section}{ANEXO D. Compilación e integración del reconocedor en ELAN 7.1}
 \label{anx:compilacion_elan}
+
+\renewcommand{\thetable}{D.\arabic{table}}
+\setcounter{table}{0}
+\renewcommand{\thecodigo}{D.\arabic{codigo}}
+\setcounter{codigo}{0}
+\renewcommand{\thefigure}{D.\arabic{figure}}
+\setcounter{figure}{0}
 
 Este anexo describe cómo compilar el código fuente modificado de ELAN 7.1 e integrar el reconocedor de IA en una instalación funcional de la herramienta. La modificación incorpora el paquete \textbf{mpi.eudico.client.annotator.recognizer.ai} al árbol fuente de ELAN, manteniendo intactas las clases originales. Esta decisión reduce el riesgo de afectar funcionalidades existentes y facilita retirar o actualizar el reconocedor en el futuro.
 
-\subsubsection{Prerrequisitos}
+Antes de compilar deben cumplirse los prerrequisitos de la Tabla~\ref{tab:prerrequisitos}. En particular, la variable de entorno \textbf{JAVA\_HOME} debe apuntar al JDK 21 antes de ejecutar Maven; esta verificación evita errores de compilación asociados a versiones de Java distintas de las declaradas en el proyecto.
 
 \begin{table}[H]
 \centering
@@ -769,11 +722,7 @@ Requerido en tiempo de ejecución para el middleware y los backends de modelos. 
 \end{tabular}
 \end{table}
 
-Antes de ejecutar Maven, la variable de entorno \textbf{JAVA\_HOME} debe apuntar al JDK 21. Esta verificación evita errores de compilación asociados a versiones de Java distintas de las declaradas en el proyecto.
-
-\subsubsection{Estructura del código añadido}
-
-Las clases Java añadidas se concentran en un solo paquete dentro del repositorio de ELAN. La siguiente estructura muestra la ubicación del reconocedor, su panel de configuración, el cliente HTTP y los DTO utilizados para intercambiar datos con el middleware:
+Las clases Java añadidas se concentran en un solo paquete dentro del repositorio de ELAN. El Código~\ref{fig:paquete_java_ai} muestra la ubicación del reconocedor, su panel de configuración, el cliente HTTP y los DTO utilizados para intercambiar datos con el middleware.
 
 \begin{center}
 \begin{minipage}{0.96\textwidth}
@@ -808,18 +757,14 @@ elan-7.1/src/main/java/mpi/eudico/client/annotator/recognizer/ai/
 \vspace{0.03cm}
 \hrule
 
-\captionof{figure}{Paquete Java del reconocedor de IA dentro del árbol fuente de ELAN}
+\captionof{codigo}{Paquete Java del reconocedor de IA dentro del árbol fuente de ELAN}
 \label{fig:paquete_java_ai}
 \end{minipage}
 \end{center}
 
-\subsubsection{Dependencias añadidas al \textbf{pom.xml}}
+Sobre las dependencias, el cliente HTTP \textbf{AIOrchestrationMiddlewareClient} usa clases disponibles en el JDK 11+, en particular \textbf{java.net.http.HttpClient}, por lo que las llamadas al middleware no requieren librerías externas. Para el parseo de las respuestas JSON se utiliza \textbf{org.json}, dependencia que ya forma parte del archivo \textbf{pom.xml} de ELAN 7.1. En consecuencia, la integración no agrega nuevas dependencias al proyecto.
 
-El cliente HTTP \textbf{AIOrchestrationMiddlewareClient} usa clases disponibles en el JDK 11+, en particular \textbf{java.net.http.HttpClient}, por lo que las llamadas al middleware no requieren librerías externas. Para el parseo de las respuestas JSON se utiliza \textbf{org.json}, dependencia que ya forma parte del archivo \textbf{pom.xml} de ELAN 7.1. En consecuencia, la integración no agrega nuevas dependencias al proyecto.
-
-\subsubsection{Registro del reconocedor en ELAN}
-
-ELAN descubre los reconocedores disponibles mediante el mecanismo Service Provider Interface de Java. Por ello, el nuevo reconocedor debe declararse en el archivo \textbf{src/main/resources/META-INF/services/mpi.eudico.client.annotator.recognizer.api.Recognizer} con la siguiente línea:
+ELAN descubre los reconocedores disponibles mediante el mecanismo Service Provider Interface (SPI) de Java. Por ello, el nuevo reconocedor debe declararse en el archivo \textbf{src/main/resources/META-INF/services/mpi.eudico.client.annotator.recognizer.api.Recognizer} con la línea del Código~\ref{fig:spi_recognizer}, añadida al final del archivo existente sin eliminar otras implementaciones registradas. Al iniciar la función \textit{Run Recognizer}, ELAN lee este archivo y carga todos los reconocedores declarados.
 
 \begin{center}
 \begin{minipage}{0.92\textwidth}
@@ -832,16 +777,12 @@ mpi.eudico.client.annotator.recognizer.ai.AIOrchestrationRecognizer
 \vspace{0.03cm}
 \hrule
 
-\captionof{figure}{Línea añadida al archivo SPI para registrar el reconocedor de IA}
+\captionof{codigo}{Línea añadida al archivo SPI para registrar el reconocedor de IA}
 \label{fig:spi_recognizer}
 \end{minipage}
 \end{center}
 
-La línea se añade al final del archivo existente, sin eliminar otras implementaciones que ya estén registradas. Al iniciar la función \textit{Run Recognizer}, ELAN lee este archivo y carga todos los reconocedores declarados.
-
-\subsubsection{Compilación con Maven}
-
-La compilación sigue el ciclo de vida estándar de Maven. Los comandos deben ejecutarse desde el directorio raíz del proyecto \textbf{elan-7.1/}, de modo que Maven encuentre el archivo \textbf{pom.xml}, resuelva las dependencias y genere el JAR final:
+La compilación sigue el ciclo de vida estándar de Maven. Los comandos del Código~\ref{fig:maven_build} deben ejecutarse desde el directorio raíz del proyecto \textbf{elan-7.1/}, de modo que Maven encuentre el archivo \textbf{pom.xml}, resuelva las dependencias y genere el JAR final. Si la compilación termina correctamente, Maven reporta \textbf{BUILD SUCCESS} y deja el archivo generado en \textbf{target/elan-7.1.jar}.
 
 \begin{center}
 \begin{minipage}{0.88\textwidth}
@@ -870,16 +811,12 @@ mvn package -Dexec.phase=install
 \vspace{0.03cm}
 \hrule
 
-\captionof{figure}{Proceso de compilación y empaquetado con Maven}
+\captionof{codigo}{Proceso de compilación y empaquetado con Maven}
 \label{fig:maven_build}
 \end{minipage}
 \end{center}
 
-Si la compilación termina correctamente, Maven reporta \textbf{BUILD SUCCESS} y deja el archivo JAR generado en \textbf{target/elan-7.1.jar}.
-
-\subsubsection{Ejecución directa con Maven en modo desarrollo}
-
-Durante el desarrollo, ELAN puede ejecutarse directamente desde Maven. Esta opción permite probar el reconocedor integrado sin reemplazar todavía el JAR de una instalación existente:
+Durante el desarrollo, ELAN puede ejecutarse directamente desde Maven con los comandos del Código~\ref{fig:maven_run}. Esta opción permite probar el reconocedor integrado sin reemplazar todavía el JAR de una instalación existente.
 
 \begin{center}
 \begin{minipage}{0.74\textwidth}
@@ -896,14 +833,12 @@ mvn exec:exec
 \vspace{0.03cm}
 \hrule
 
-\captionof{figure}{Ejecución de ELAN durante el desarrollo sin construir el JAR}
+\captionof{codigo}{Ejecución de ELAN durante el desarrollo sin construir el JAR}
 \label{fig:maven_run}
 \end{minipage}
 \end{center}
 
-\subsubsection{Distribución del JAR compilado}
-
-Para distribuir ELAN con el reconocedor de IA integrado, se puede reemplazar el JAR original de una instalación existente. Antes de hacerlo, conviene guardar una copia de seguridad para poder restaurar la herramienta si el nuevo paquete no inicia correctamente:
+Para distribuir ELAN con el reconocedor de IA integrado, se puede reemplazar el JAR original de una instalación existente siguiendo el Código~\ref{fig:reemplazar_jar}. Antes de hacerlo, conviene guardar una copia de seguridad para poder restaurar la herramienta si el nuevo paquete no inicia correctamente. Debe considerarse, además, que si la instalación de ELAN utiliza un \textit{launcher} independiente, como ocurre con algunos instaladores de MPI, el nombre del JAR puede variar; por esta razón, antes de reemplazarlo se debe revisar qué archivo ejecuta realmente el script de lanzamiento o el acceso directo de ELAN.
 
 \begin{center}
 \begin{minipage}{0.92\textwidth}
@@ -925,14 +860,10 @@ copy "elan-7.1\target\elan-7.1.jar" `
 \vspace{0.03cm}
 \hrule
 
-\captionof{figure}{Sustitución del JAR en una instalación existente de ELAN en Windows}
+\captionof{codigo}{Sustitución del JAR en una instalación existente de ELAN en Windows}
 \label{fig:reemplazar_jar}
 \end{minipage}
 \end{center}
-
-\noindent\textbf{Nota:} si la instalación de ELAN utiliza un \textit{launcher} independiente, como ocurre con algunos instaladores de MPI, el nombre del JAR puede variar. Por esta razón, antes de reemplazarlo se debe revisar qué archivo ejecuta realmente el script de lanzamiento o el acceso directo de ELAN.
-
-\subsubsection{Verificación de la integración}
 
 Con ELAN ejecutándose desde el JAR modificado, la integración puede comprobarse siguiendo el flujo normal de uso del reconocedor:
 
@@ -948,9 +879,7 @@ Con ELAN ejecutándose desde el JAR modificado, la integración puede comprobars
     \item Pulsar \textbf{Start} en el diálogo de reconocedores para iniciar la inferencia.
 \end{enumerate}
 
-Si la integración funciona correctamente, las anotaciones generadas por el modelo aparecerán al finalizar el proceso en un nuevo nivel de anotación llamado \textbf{AUTO\_GLOSS\_SEGMENTS}. Este resultado confirma que la inferencia se ejecutó fuera de ELAN, pero regresó a la herramienta como segmentos temporales editables por el investigador.
-
-\subsubsection{Resolución de problemas frecuentes}
+Si la integración funciona correctamente, las anotaciones generadas por el modelo aparecerán al finalizar el proceso en un nuevo nivel de anotación llamado \textbf{AUTO\_GLOSS\_SEGMENTS}. Este resultado confirma que la inferencia se ejecutó fuera de ELAN, pero regresó a la herramienta como segmentos temporales editables por el investigador. Para finalizar, la Tabla~\ref{tab:troubleshooting} reúne los problemas más frecuentes observados durante la compilación y la integración, junto con su solución.
 
 \begin{table}[H]
 \centering
