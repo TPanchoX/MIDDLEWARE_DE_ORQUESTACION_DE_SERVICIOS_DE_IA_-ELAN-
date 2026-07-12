@@ -130,11 +130,13 @@ class ModelRegistryService:
         self._bootstrap_docker_manifests()
 
     def _ensure_store(self) -> None:
+        """Crea la estructura del almacén (installed/ y registry.json) si no existe."""
         self.installed_dir.mkdir(parents=True, exist_ok=True)
         if not self.registry_path.exists():
             self._write_registry([])
 
     def _load_registry(self) -> None:
+        """Carga registry.json a memoria; si está corrupto arranca con un registro vacío."""
         try:
             raw_registry = json.loads(self.registry_path.read_text(encoding="utf-8"))
             raw_models = raw_registry.get("models", [])
@@ -196,6 +198,7 @@ class ModelRegistryService:
             self._save_registry()
 
     def list_models(self) -> list[RegisteredModel]:
+        """Lista los modelos registrados; en perfil final solo los backends docker_http."""
         available_models = self._models.values()
         if self.runtime_profile in {"final", "production", "docker"}:
             available_models = [
@@ -228,6 +231,7 @@ class ModelRegistryService:
             return self._get_model_unlocked(model_id=model_id, version=version)
 
     def get_available_model(self, model_id: str, version: str | None = None) -> InstalledModel:
+        """Como get_model, pero exige estado 'available' (409 si está deshabilitado)."""
         model = self.get_model(model_id=model_id, version=version)
         if model.status == "disabled":
             raise ModelDisabledError(model_id=model.model_id, version=model.version)
@@ -367,6 +371,7 @@ class ModelRegistryService:
         return ModelStatusUpdateResponse(message="Model status updated successfully.", model=updated_model)
 
     def resolve_install_path(self, model: InstalledModel) -> str | None:
+        """Convierte el install_path relativo (guardado en el registry) en ruta absoluta."""
         if model.install_path is None:
             return None
 
@@ -378,6 +383,7 @@ class ModelRegistryService:
         return str((app_dir / path).resolve())
 
     def _get_model_unlocked(self, model_id: str, version: str | None = None) -> InstalledModel:
+        """Busca el modelo; sin versión explícita devuelve la más reciente. Llamar con _lock tomado."""
         if version is not None:
             model = self._models.get((model_id, version))
             if model is None:
@@ -395,6 +401,7 @@ class ModelRegistryService:
         manifest: ModelManifest,
         zip_prefix: str = "",
     ) -> InstalledModel:
+        """Extrae el paquete ya validado a installed/{id}/{versión} y lo persiste en el registry."""
         install_path = self.installed_dir / manifest.model_id / manifest.version
         self._assert_path_inside(install_path, self.installed_dir)
 
@@ -412,7 +419,7 @@ class ModelRegistryService:
                     ).get("models", [])
                 )
                 if not persisted:
-                    # Stale in-memory entry — remove it silently and proceed.
+                    # Entrada en memoria obsoleta — se elimina y se continúa.
                     logger.warning(
                         "Removing stale in-memory entry for '%s' v%s (not in registry.json).",
                         manifest.model_id, manifest.version,
@@ -423,7 +430,7 @@ class ModelRegistryService:
                         f"Model '{manifest.model_id}' version '{manifest.version}' is already installed."
                     )
             if install_path.exists():
-                # Orphan directory from a failed rollback — clean it up.
+                # Directorio huérfano de un rollback fallido — se limpia.
                 logger.warning(
                     "Removing orphan install directory for '%s' v%s.",
                     manifest.model_id, manifest.version,
@@ -455,6 +462,7 @@ class ModelRegistryService:
         file_names: set[str],
         zip_prefix: str = "",
     ) -> ModelManifest:
+        """Lee y valida manifest.json contra el schema Pydantic; reporta los campos inválidos."""
         if "manifest.json" not in file_names:
             raise ModelManifestNotFoundError("Model package must contain manifest.json at the zip root.")
 
@@ -474,6 +482,7 @@ class ModelRegistryService:
             raise ModelManifestInvalidError(detail) from exc
 
     def _validate_artifacts(self, manifest: ModelManifest, file_names: set[str]) -> None:
+        """Verifica que cada artefacto declarado exista en el ZIP (salvo docker_image, que es externo)."""
         for artifact_name, artifact_path in manifest.artifacts.items():
             if self._is_external_docker_artifact(manifest=manifest, artifact_name=artifact_name):
                 continue
@@ -488,6 +497,7 @@ class ModelRegistryService:
         return manifest.runtime.mode == "docker" and artifact_name == "docker_image"
 
     def _validate_zip_entries(self, entries: Iterable[zipfile.ZipInfo]) -> set[str]:
+        """Normaliza las rutas del ZIP (rechazando las inseguras) y exige al menos un archivo."""
         file_names: set[str] = set()
         has_files = False
 
@@ -508,14 +518,15 @@ class ModelRegistryService:
         target_dir: Path,
         zip_prefix: str = "",
     ) -> None:
+        """Extrae el ZIP a *target_dir* validando que ninguna ruta escape del directorio destino."""
         for entry in package.infolist():
             normalized_name = self._normalize_package_path(entry.filename)
 
-            # Strip the common top-level prefix that was detected during validation.
+            # Quitar el prefijo raíz común detectado durante la validación.
             if zip_prefix and normalized_name.startswith(zip_prefix):
                 normalized_name = normalized_name[len(zip_prefix):]
 
-            # Skip the prefix directory entry itself (empty after stripping).
+            # Omitir la entrada del propio directorio prefijo (queda vacía al recortarla).
             if not normalized_name:
                 continue
 
@@ -555,8 +566,8 @@ class ModelRegistryService:
         top_dirs = {_top_dir(name) for name in file_names}
         if len(top_dirs) == 1:
             prefix = top_dirs.pop()
-            # Only strip if EVERY file lives below a real subdirectory
-            # (prefix == "" means all files are already at the root).
+            # Solo se recorta si TODOS los archivos viven bajo un subdirectorio
+            # real (prefix == "" significa que ya están en la raíz).
             return prefix
         return ""
 
@@ -604,6 +615,7 @@ class ModelRegistryService:
             return resolved_path.as_posix()
 
     def _assert_path_inside(self, candidate: Path, parent: Path) -> None:
+        """Barrera anti path-traversal: *candidate* debe quedar dentro de *parent*."""
         try:
             candidate.resolve().relative_to(parent.resolve())
         except ValueError as exc:

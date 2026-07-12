@@ -1,5 +1,5 @@
-# Ignore data files generated at runtime (models, registry, bootstrap manifests).
-# Keep the directory structure (tracked via .gitkeep files).
+# Ignorar los datos generados en tiempo de ejecución (modelos, registry,
+# manifests de bootstrap). La estructura de carpetas se conserva vía .gitkeep.
 models_store/*
 !models_store/.gitkeep
 bootstrap_manifests/*

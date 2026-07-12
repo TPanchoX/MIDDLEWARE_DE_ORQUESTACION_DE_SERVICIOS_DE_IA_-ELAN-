@@ -28,7 +28,7 @@ from urllib.request import Request, urlopen
 
 try:
     import docker
-except ImportError:  # pragma: no cover - exercised when dependency is absent.
+except ImportError:  # pragma: no cover - ocurre solo si falta la dependencia.
     docker = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
@@ -141,8 +141,8 @@ class DockerService:
                 container.start()
                 container.reload()
                 container_start_ms = self._elapsed_ms(started_at)
-            # Re-attach to shared network if needed (handles containers that
-            # were created before the network was configured).
+            # Reconectar a la red compartida si hace falta (cubre contenedores
+            # creados antes de que la red estuviera configurada).
             if network:
                 self._connect_to_network(client=client, container=container, network=network)
         except self._not_found_error():
@@ -160,11 +160,11 @@ class DockerService:
                     },
                 )
                 if network:
-                    # Container-to-container mode: join the shared network;
-                    # no host-port binding required.
+                    # Modo contenedor-a-contenedor: se une a la red compartida;
+                    # no se necesita mapear puertos al host.
                     run_kwargs["network"] = network
                 else:
-                    # Fallback host-port mode (middleware running on host).
+                    # Modo alternativo por puerto del host (middleware fuera de Docker).
                     run_kwargs["ports"] = {f"{internal_port}/tcp": host_port}
 
                 container = client.containers.run(**run_kwargs)
@@ -182,7 +182,7 @@ class DockerService:
             ) from exc
 
         if network:
-            # Reachable from the middleware container via Docker DNS.
+            # Accesible desde el contenedor del middleware vía DNS interno de Docker.
             base_url = f"http://{name}:{internal_port}"
         else:
             base_url = self._container_base_url(container=container, internal_port=internal_port)
@@ -267,6 +267,7 @@ class DockerService:
         return DockerHttpResult(payload=decoded, elapsed_ms=self._elapsed_ms(started_at))
 
     def _available_client(self) -> Any:
+        """Devuelve el cliente del SDK de Docker verificando que el daemon responda (ping)."""
         if docker is None:
             raise DockerNotAvailableError(
                 "Docker SDK for Python is not installed. Install requirements.txt before using DockerRunner."
@@ -283,6 +284,7 @@ class DockerService:
             ) from exc
 
     def _ensure_image_exists(self, *, client: Any, image: str) -> None:
+        """Verifica que la imagen exista localmente; si falta responde 404 (reinstalar modelo)."""
         try:
             client.images.get(image)
         except self._image_not_found_error() as exc:
@@ -315,7 +317,7 @@ class DockerService:
         return f"http://127.0.0.1:{host_port}"
 
     def _connect_to_network(self, *, client: Any, container: Any, network: str) -> None:
-        """Attach *container* to *network* if it is not already connected."""
+        """Conecta *container* a *network* si aún no está conectado (falla solo con warning)."""
         try:
             net = client.networks.get(network)
             net.reload()
@@ -345,6 +347,7 @@ class DockerService:
 
     @staticmethod
     def _container_name(*, model_id: str, model_version: str) -> str:
+        """Nombre determinístico ``elan-ai-model-{id}-{versión}`` saneado para Docker."""
         raw_name = f"elan-ai-model-{model_id}-{model_version}".lower()
         name = re.sub(r"[^a-z0-9_.-]+", "-", raw_name).strip("-")
         return name[:120] or "elan-ai-model"

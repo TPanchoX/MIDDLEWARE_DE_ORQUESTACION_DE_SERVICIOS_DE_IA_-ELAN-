@@ -12,37 +12,39 @@ services:
       MIDDLEWARE_LOG_LEVEL: INFO
       MIDDLEWARE_RUNTIME_PROFILE: final
       MIDDLEWARE_MODELS_STORE_DIR: /app/data/models_store
-      # Bootstrap: on every startup the middleware scans this directory and
-      # auto-registers any manifest.json found there.  Combined with the bind
-      # mount below, installed model manifests survive even a full volume reset.
+      # Bootstrap: en cada arranque el middleware escanea este directorio y
+      # re-registra automáticamente cualquier manifest.json que encuentre.
+      # Combinado con el bind mount de abajo, los manifests de los modelos
+      # instalados sobreviven incluso a un reseteo completo de volúmenes.
       MIDDLEWARE_BOOTSTRAP_MANIFESTS_DIR: /app/data/bootstrap_manifests
-      # Directory on the HOST where videos are stored.
-      # Mounted read-only at /data/videos inside every model container.
-      # Use forward slashes even on Windows (Docker Desktop translates them).
+      # Carpeta del HOST donde están los videos.
+      # Se monta en solo lectura como /data/videos dentro de cada contenedor
+      # de modelo. Usar barras "/" incluso en Windows (Docker Desktop las traduce).
       MIDDLEWARE_VIDEOS_DIR: "C:/Users/imbaq/OneDrive/Desktop"
-      # Shared Docker network used for container-to-container communication.
-      # Model containers are attached to this network so the middleware can
-      # reach them by container name (no host-port mapping required).
+      # Red Docker compartida para la comunicación contenedor a contenedor.
+      # Los contenedores de modelo se unen a esta red para que el middleware
+      # los alcance por nombre de contenedor (sin mapear puertos al host).
       MIDDLEWARE_DOCKER_NETWORK: elan-ai-shared
     volumes:
-      # BIND MOUNTS — these live on the host filesystem and are NEVER removed
-      # by "docker-compose down -v", "docker volume prune" or Docker Desktop.
-      # The registry (registry.json) and all installed model files persist here.
+      # BIND MOUNTS — viven en el filesystem del host y NUNCA los borra
+      # "docker-compose down -v", "docker volume prune" ni Docker Desktop.
+      # El registry (registry.json) y los modelos instalados persisten aquí.
       - ./data/models_store:/app/data/models_store
-      # Bootstrap manifests: model manifests are copied here on install so that
-      # the middleware can re-register models automatically on the next startup
-      # even if the main registry is somehow lost.
+      # Manifests de respaldo: se copian aquí al instalar cada modelo para que
+      # el middleware pueda re-registrarlos automáticamente en el próximo
+      # arranque, incluso si el registry principal se pierde.
       - ./data/bootstrap_manifests:/app/data/bootstrap_manifests
-      # Mount the Docker socket so the middleware can build/run model containers.
+      # Socket de Docker: permite al middleware construir/ejecutar los
+      # contenedores de modelo desde dentro de su propio contenedor.
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - shared
     restart: unless-stopped
 
-# No named volumes — everything is on the host filesystem via bind mounts.
+# Sin volúmenes nombrados — todo vive en el host vía bind mounts.
 
 networks:
   shared:
-    # Fixed name so model containers can join by this exact name regardless of
-    # the docker-compose project prefix.
+    # Nombre fijo para que los contenedores de modelo puedan unirse con este
+    # nombre exacto, sin importar el prefijo de proyecto de docker-compose.
     name: elan-ai-shared

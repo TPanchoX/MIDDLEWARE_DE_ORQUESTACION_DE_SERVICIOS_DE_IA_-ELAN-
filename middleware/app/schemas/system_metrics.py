@@ -1,3 +1,10 @@
+"""
+Contrato de respuesta de GET /api/v1/metrics (observabilidad del middleware).
+
+Expone los contadores acumulados por ``MetricsService`` más el estado en vivo
+de la cola (``active_jobs``/``queued_jobs`` se leen de JobQueue al momento de
+la consulta). Ver TIC, Fase 4.
+"""
 from typing import Dict, Optional
 
 from pydantic import BaseModel, Field

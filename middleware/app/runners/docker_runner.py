@@ -46,10 +46,10 @@ class DockerRunner(BaseRunner):
             assert image is not None
             settings = get_settings()
 
-            # Merge the global videos-dir volume (if configured) with any
-            # volumes declared in the model manifest's container section.
-            # The videos dir is mounted read-only at /data/videos so the
-            # model backend can access video files by their container path.
+            # Combina el volumen global de videos (si está configurado) con los
+            # volúmenes declarados en la sección container del manifest.
+            # El directorio de videos se monta en solo lectura como /data/videos
+            # para que el backend pueda abrir los archivos por su ruta interna.
             merged_volumes: dict[str, Any] | None = config["volumes"]
             if settings.videos_dir and settings.videos_dir.strip():
                 videos_vol: dict[str, Any] = {
@@ -66,8 +66,8 @@ class DockerRunner(BaseRunner):
                 container_name=config["container_name"],
                 environment=config["environment"],
                 volumes=merged_volumes,
-                # Pass the shared Docker network so container-to-container
-                # communication works when the middleware itself runs in Docker.
+                # Red Docker compartida: permite la comunicación contenedor a
+                # contenedor cuando el propio middleware corre dentro de Docker.
                 network=settings.docker_network,
             )
             base_url = handle.base_url
@@ -107,6 +107,7 @@ class DockerRunner(BaseRunner):
         return output
 
     def _docker_image(self, request: InferenceInput, *, required: bool) -> str | None:
+        """Obtiene la imagen Docker declarada en artifacts; obligatoria salvo con service_url."""
         image = request.artifacts.get("docker_image")
         if image is None or not image.strip():
             if required:
@@ -118,6 +119,7 @@ class DockerRunner(BaseRunner):
         return image.strip()
 
     def _container_config(self, raw_config: dict[str, object]) -> dict[str, Any]:
+        """Normaliza y valida la sección ``container`` del manifest (puertos, rutas, volúmenes)."""
         internal_port = self._positive_int(raw_config.get("internal_port", 8080), "container.internal_port")
         startup_timeout_sec = self._positive_int(
             raw_config.get("startup_timeout_sec", 30),

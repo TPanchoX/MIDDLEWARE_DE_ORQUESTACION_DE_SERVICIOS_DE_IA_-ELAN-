@@ -232,3 +232,172 @@ documento principal (Overleaf) para que todo compile con el nuevo formato.
   al ser documentos independientes).
 - El código del middleware y del cliente Java no se modificó; todos los cambios
   son del escrito.
+
+---
+---
+
+# SEGUNDA RONDA DE CORRECCIONES — 06/07/2026
+
+Novedades detectadas después de aplicar la primera ronda. Los cambios se hicieron
+en dos lugares a la vez: en los archivos de capítulo sueltos (`01_...`, `03_...`,
+`04_...`, `Anexos_finales.tex`, `referencias.bib`) y en el documento completo
+`Codigo_TIC_ENTERO_LATEX.tex`, que refleja el main de Overleaf. **La forma más
+directa de llevar todo a Overleaf es reemplazar el contenido del main con el
+`Codigo_TIC_ENTERO_LATEX.tex` corregido** (ver pasos pendientes al final).
+
+## Novedad 1 — La aclaración "es un middleware, no un componente/módulo" estaba en el capítulo equivocado
+
+**Problema:** el marco teórico es estado del arte; no debe hablar de lo que
+nosotros implementamos ni justificar decisiones propias. Sin embargo, ahí estaban
+las frases "Ese es precisamente el papel del software desarrollado en este
+trabajo..." y todo el párrafo "Esta precisión también explica por qué la solución
+no se cataloga como un componente o un módulo...".
+
+**Qué se hizo:**
+
+- En el **marco teórico** (sección *Patrones de integración y rol del
+  middleware*) quedaron solo las definiciones generales: qué es un middleware
+  (Bernstein 1996), qué es un módulo, qué es un componente (Szyperski 2002) y en
+  qué se diferencian entre sí, **sin ninguna mención a la solución del TIC**.
+  El archivo suelto `02_marco_teorico.tex` ya tenía esta versión de una sesión
+  anterior; lo que faltaba era actualizar el main de Overleaf, que seguía con la
+  versión antigua. El `Codigo_TIC_ENTERO_LATEX.tex` ya quedó sincronizado.
+- La justificación aplicada a **nuestra** solución (proceso autónomo, se instala
+  y actualiza por separado, corre en su propio contenedor, atiende por red; la
+  única pieza que sí es un componente es el reconocedor Java dentro de ELAN) se
+  movió al capítulo de **Metodología → Enfoque y tipo de trabajo**, como párrafo
+  nuevo a continuación de la aclaración corta que ya existía ahí. Ese es el lugar
+  correcto: es una decisión/caracterización del trabajo, no teoría.
+- Se agregó a `referencias.bib` la entrada **`szyperski2002component`**
+  (Szyperski, *Component Software: Beyond Object-Oriented Programming*, 2.ª ed.,
+  Addison-Wesley, 2002), porque el marco teórico corregido la cita y no existía
+  en el `.bib` (habría dado cita indefinida al compilar).
+
+**Sobre HTTP:** se revisó lo mismo para la justificación del uso de HTTP. En el
+marco teórico (sección REST) solo hay teoría general, y la justificación aplicada
+a nuestra solución ya estaba en Metodología → *Análisis y diseño* (análisis de
+las 4 alternativas). Estaba en el lugar correcto; **no hizo falta mover nada**.
+
+## Novedad 2 — El diagrama de clases TikZ compilaba mal
+
+**Qué se hizo:**
+
+- Se creó el archivo **`Diagramas/diagrama_clases_middleware.drawio`** con el
+  mismo diagrama (mismas clases, métodos y relaciones que el TikZ, que a su vez
+  fueron verificados contra el código real de `middleware/app/`). Se abre en
+  https://app.diagrams.net o en la aplicación de escritorio de draw.io.
+- En `03_metodologia.tex` (y en el ENTERO) el bloque TikZ del diagrama de clases
+  se reemplazó por una figura con imagen:
+  `\includegraphics[width=0.97\textwidth]{Diagramas/diagrama_clases_middleware.png}`.
+  La `\caption` y el `\label{fig:diagrama_clases}` se conservaron, así que las
+  referencias cruzadas del texto no cambian.
+- **La figura TikZ del ciclo de vida (Figura del ciclo de desarrollo) se dejó
+  como está**, porque la novedad reportada era solo del diagrama de clases.
+
+**Pendiente tuyo:** abrir el `.drawio` en draw.io, exportar como PNG
+(Archivo → Exportar como → PNG, zoom 200 % o 300 DPI para que se vea nítido) con
+el nombre `diagrama_clases_middleware.png` y subirlo a la carpeta `Diagramas/`
+de Overleaf.
+
+## Novedad 3 — Anexos con numeración romana de páginas + faltaba el capítulo 5
+
+**Problema:** después de las referencias, el main hacía
+`\pagenumbering{Roman}` y retomaba el contador de los preliminares, por lo que
+los anexos salían con páginas romanas (X, XI, ...) tanto en el pie de página como
+en el índice.
+
+**Qué se hizo (en el ENTERO / main de Overleaf):**
+
+- Se eliminó el bloque `\appendix` + `\pagenumbering{Roman}` +
+  `\setcounter{page}{...}`. Ahora los anexos **continúan la numeración arábiga**
+  del cuerpo (verificado en compilación local: Anexo A en pág. 57, tras terminar
+  las referencias en la 56).
+- Se agregó el **capítulo 5: ANEXOS** (`\section[ANEXOS]{Anexos}`) con un párrafo
+  corto que presenta qué contiene cada anexo (A–D detalle técnico, E–G enlaces).
+  Los títulos "ANEXO A...", "ANEXO B..." siguen igual que antes (sin numerar,
+  con su entrada en el índice).
+- De paso se eliminó un bloque de comentarios que estaba **triplicado** en el
+  main justo antes del Anexo A.
+
+## Novedad 4 — Títulos de capítulos en mayúsculas en el índice
+
+**Qué se hizo:** se usó el argumento opcional de `\section`, que controla el
+texto que va al índice, dejando el título del cuerpo intacto (este ya sale en
+mayúsculas por el `\MakeUppercase` del formato de títulos):
+
+- `\section[INTRODUCCIÓN]{Introducción}` (en `01_introduccion.tex`)
+- `\section[METODOLOGÍA]{Metodología}` (en `03_metodologia.tex`)
+- `\section[RESULTADOS, CONCLUSIONES Y RECOMENDACIONES]{...}` (en `04_...`)
+- `\section[REFERENCIAS BIBLIOGRÁFICAS]{Referencias bibliográficas}` (en el main)
+- `\section[ANEXOS]{Anexos}` (nuevo, en el main)
+
+Los subtítulos (1.1, 2.3, etc.) quedaron tal como estaban. Verificado en el
+`.toc` de la compilación local: los cinco capítulos aparecen en mayúsculas y el
+resto sin cambios.
+
+## Novedad 5 — Tres anexos nuevos con los enlaces del proyecto
+
+Se agregaron al final de `Anexos_finales.tex` (y del ENTERO), cortos y en el
+mismo estilo de los demás:
+
+- **ANEXO E. Repositorio del código fuente del middleware** — presenta el repo
+  de GitHub y qué contiene (la app FastAPI con la estructura del Código de la
+  metodología, Dockerfile, docker-compose, requirements).
+- **ANEXO F. Repositorio del código fuente de ELAN 7.1 modificado** — presenta el
+  repo con el árbol fuente de ELAN + el paquete `...recognizer.ai`, y remite al
+  Anexo D para compilarlo.
+- **ANEXO G. Manuales de uso y de desarrollo del sistema** — enlace a la carpeta
+  compartida de OneDrive con el manual de usuario (investigadores) y el manual
+  técnico (desarrolladores de backends).
+
+> **IMPORTANTE:** las tres URL son **de ejemplo** (están marcadas con
+> `% TODO: reemplazar por la URL real...` en el código). Hay que reemplazarlas
+> por los enlaces reales de tus repositorios y de tu carpeta OneDrive.
+
+## Novedad 6 — Nombres de anexos en números romanos (solo en el ENTERO)
+
+**Qué se hizo (a pedido expreso, solo cambio de nombres, en
+`Codigo_TIC_ENTERO_LATEX.tex`):**
+
+- Los anexos pasaron de letras a números romanos: ANEXO A→I, B→II, C→III,
+  D→IV, E→V, F→VI, G→VII (títulos y entradas del índice).
+- Para no dejar referencias rotas, también se actualizaron las menciones dentro
+  del texto ("ver Anexo~B" → "ver Anexo~II", "los Anexos A, B, C y D" →
+  "los Anexos I, II, III y IV", etc.).
+- Los contadores por anexo se renombraron en consecuencia para que las tablas y
+  códigos coincidan con el título del anexo donde viven: Tabla A.1 → Tabla I.1,
+  Código B.2 → Código II.2, etc. (si prefieres que conserven las letras, es
+  revertir los `\renewcommand{\thetable}{I.\arabic{table}}` y compañía).
+- Verificado con compilación local: el índice muestra ANEXO I a VII y el PDF
+  genera sin errores.
+- **Ojo:** este cambio se hizo únicamente en el ENTERO (que es lo que va al main
+  de Overleaf). El archivo suelto `Anexos_finales.tex` y las menciones en
+  `03_metodologia.tex` / `04_resultados_conclusiones.tex` siguen con letras; si
+  se quiere mantener los sueltos como respaldo fiel, habría que replicar ahí el
+  mismo renombre.
+
+## Verificación realizada
+
+Se compiló localmente el documento completo con MiKTeX (pdflatex + biber + 2
+pasadas, con un stub para las imágenes que solo existen en Overleaf):
+
+- PDF de 80 páginas generado **sin errores** y **sin citas indefinidas**.
+- Índice: capítulos 1–5 en mayúsculas; anexos E, F y G presentes.
+- Páginas de anexos en arábigo continuo (A=57, B=61, C=65, D=67, E=70, F=71, G=71).
+- La entrada `szyperski2002component` se resuelve en la bibliografía.
+
+## PASOS PENDIENTES en Overleaf
+
+1. Reemplazar el contenido del `main.tex` de Overleaf con el de
+   `Codigo_TIC_ENTERO_LATEX.tex` corregido (o, si prefieres ir por partes,
+   actualizar los capítulos con los archivos sueltos y aplicar a mano en el main:
+   título de referencias con `[REFERENCIAS BIBLIOGRÁFICAS]`, bloque de anexos sin
+   numeración romana y nuevo capítulo 5).
+2. Agregar la entrada `szyperski2002component` a `referencias_ieee.bib` de
+   Overleaf (está en el `referencias.bib` local, justo después de la de
+   Bernstein).
+3. Exportar el PNG del diagrama de clases desde draw.io y subirlo como
+   `Diagramas/diagrama_clases_middleware.png`.
+4. Reemplazar las 3 URL de ejemplo de los Anexos E, F y G por las reales.
+5. Recompilar (XeLaTeX/pdfLaTeX → Biber → 2 compilaciones más) y revisar el
+   índice una vez.

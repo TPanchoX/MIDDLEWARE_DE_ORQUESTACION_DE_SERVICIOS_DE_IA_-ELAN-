@@ -5,8 +5,8 @@
 %  códigos se numeran por anexo: Tabla A.1, Código B.2, etc.
 % ============================================================
 
-\section*{\normalfont ANEXO A. Esquema completo del archivo manifest.json}
-\addcontentsline{toc}{section}{ANEXO A. Esquema completo del archivo manifest.json}
+\section*{\normalfont ANEXO I. Esquema completo del archivo manifest.json}
+\addcontentsline{toc}{section}{ANEXO I. Esquema completo del archivo manifest.json}
 \label{anx:manifest_schema}
 
 \renewcommand{\thetable}{A.\arabic{table}}
@@ -234,11 +234,11 @@ Para cerrar el anexo, el Código~\ref{fig:manifest_ejemplo} presenta el \textbf{
 \end{center}
 
 % ============================================================
-%  Anexo B — Ejemplo completo de respuesta JSON de inferencia
+%  Anexo II — Ejemplo completo de respuesta JSON de inferencia
 % ============================================================
 
-\section*{\normalfont ANEXO B. Ejemplo completo de respuesta JSON de inferencia}
-\addcontentsline{toc}{section}{ANEXO B. Ejemplo completo de respuesta JSON de inferencia}
+\section*{\normalfont ANEXO II. Ejemplo completo de respuesta JSON de inferencia}
+\addcontentsline{toc}{section}{ANEXO II. Ejemplo completo de respuesta JSON de inferencia}
 \label{anx:respuesta_json}
 
 \renewcommand{\thetable}{B.\arabic{table}}
@@ -461,11 +461,11 @@ Dentro de \textbf{trace}, el objeto \textbf{stages} corresponde al esquema \text
 \end{table}
 
 % ============================================================
-%  Anexo C — Configuración completa del docker-compose.yml
+%  Anexo III — Configuración completa del docker-compose.yml
 % ============================================================
 
-\section*{\normalfont ANEXO C. Configuración del docker-compose.yml del middleware}
-\addcontentsline{toc}{section}{ANEXO C. Configuración del docker-compose.yml del middleware}
+\section*{\normalfont ANEXO III. Configuración del docker-compose.yml del middleware}
+\addcontentsline{toc}{section}{ANEXO III. Configuración del docker-compose.yml del middleware}
 \label{anx:docker_compose}
 
 \renewcommand{\thetable}{C.\arabic{table}}
@@ -669,11 +669,11 @@ Respecto de la seguridad y la red, el puerto 8000 del middleware se expone únic
 El socket de Docker montado en el servicio entrega al contenedor del middleware un nivel de control amplio sobre el daemon Docker del host. Para un entorno local y controlado, esta decisión simplifica la construcción y ejecución de modelos; sin embargo, en escenarios compartidos o multiusuario conviene restringir ese acceso mediante un proxy de Docker, como \textbf{Tecnativa Docker Socket Proxy}, o migrar a la API REST de Docker Engine con autenticación TLS.
 
 % ============================================================
-%  Anexo D — Instrucciones de compilación e integración en ELAN 7.1
+%  Anexo IV — Instrucciones de compilación e integración en ELAN 7.1
 % ============================================================
 
-\section*{\normalfont ANEXO D. Compilación e integración del reconocedor en ELAN 7.1}
-\addcontentsline{toc}{section}{ANEXO D. Compilación e integración del reconocedor en ELAN 7.1}
+\section*{\normalfont ANEXO IV. Compilación e integración del reconocedor en ELAN 7.1}
+\addcontentsline{toc}{section}{ANEXO IV. Compilación e integración del reconocedor en ELAN 7.1}
 \label{anx:compilacion_elan}
 
 \renewcommand{\thetable}{D.\arabic{table}}
@@ -919,3 +919,54 @@ El boundary de \textbf{multipart/form-data} no debe comenzar con \textbf{--}. Ve
 \bottomrule
 \end{tabular}
 \end{table}
+
+% ============================================================
+%  Anexo E — Repositorio del código fuente del middleware
+% ============================================================
+
+\section*{\normalfont ANEXO E. Repositorio del código fuente del middleware}
+\addcontentsline{toc}{section}{ANEXO E. Repositorio del código fuente del middleware}
+\label{anx:repo_middleware}
+
+El código fuente completo del middleware de orquestación desarrollado en este trabajo se encuentra publicado en el siguiente repositorio de GitHub:
+
+% TODO: reemplazar por la URL real del repositorio
+\begin{center}
+\url{https://github.com/TPanchoX/middleware-orquestacion-elan}
+\end{center}
+
+El repositorio contiene la aplicación FastAPI organizada según la estructura de directorios presentada en la metodología (Código~\ref{lst:estructura_directorios}), junto con el \textbf{Dockerfile} del servicio, el archivo \textbf{docker-compose.yml} reproducido en el Anexo~III y las dependencias de Python declaradas en \textbf{requirements.txt}. Con este material, cualquier lector puede clonar el proyecto y levantar el middleware en su propio equipo siguiendo los comandos del apartado de despliegue y configuración del entorno.
+
+% ============================================================
+%  Anexo F — Repositorio del código fuente de ELAN 7.1 modificado
+% ============================================================
+
+\section*{\normalfont ANEXO F. Repositorio del código fuente de ELAN 7.1 modificado}
+\addcontentsline{toc}{section}{ANEXO F. Repositorio del código fuente de ELAN 7.1 modificado}
+\label{anx:repo_elan}
+
+El árbol fuente de ELAN 7.1 con el reconocedor de IA incorporado está disponible en el siguiente repositorio de GitHub:
+
+% TODO: reemplazar por la URL real del repositorio
+\begin{center}
+\url{https://github.com/TPanchoX/elan-7.1-reconocedor-ia}
+\end{center}
+
+Este repositorio parte del código fuente oficial de ELAN 7.1 y agrega el paquete \textbf{mpi.eudico.client.annotator.recognizer.ai}, que reúne el reconocedor, su panel de configuración, el cliente HTTP y los DTO de comunicación con el middleware; las clases originales de la herramienta se mantienen intactas. El procedimiento para compilar este código con Maven, registrar el reconocedor mediante SPI y sustituir el JAR en una instalación existente es el descrito en el Anexo~IV.
+
+% ============================================================
+%  Anexo G — Manuales de uso y de desarrollo
+% ============================================================
+
+\section*{\normalfont ANEXO G. Manuales de uso y de desarrollo del sistema}
+\addcontentsline{toc}{section}{ANEXO G. Manuales de uso y de desarrollo del sistema}
+\label{anx:manuales}
+
+Los manuales elaborados como parte de este trabajo se encuentran disponibles en la siguiente carpeta compartida de OneDrive:
+
+% TODO: reemplazar por la URL real de la carpeta compartida
+\begin{center}
+\url{https://1drv.ms/f/ejemplo-carpeta-manuales-tic}
+\end{center}
+
+La carpeta contiene dos documentos. El primero es el manual de usuario dirigido a investigadores, que explica paso a paso cómo poner en marcha el middleware, instalar modelos desde ELAN y ejecutar el reconocedor para obtener anotaciones automáticas. El segundo es el manual técnico dirigido a desarrolladores, que detalla cómo construir y empaquetar nuevos backends de modelos compatibles con el contrato de instalación del sistema. Ambos manuales complementan la información de los Anexos I a IV con un enfoque práctico y con capturas del uso real de la herramienta.

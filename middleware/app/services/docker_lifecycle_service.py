@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Exceptions
+# Excepciones (error_code + status_code que consume el manejador de main.py)
 # ---------------------------------------------------------------------------
 
 class DockerLifecycleError(Exception):
@@ -60,20 +60,20 @@ class DockerStartError(DockerLifecycleError):
 
 
 # ---------------------------------------------------------------------------
-# Service
+# Servicio
 # ---------------------------------------------------------------------------
 
 class DockerLifecycleService:
-    """Builds and starts Docker containers for freshly installed model packages."""
+    """Construye y arranca los contenedores Docker de los paquetes de modelo recién instalados."""
 
     DOCKERFILE_REL = "backend/Dockerfile"
 
     def __init__(self, service: DockerService | None = None) -> None:
         self._service = service or docker_service
-        self._client = None  # lazy Docker SDK client
+        self._client = None  # cliente del SDK de Docker (se crea al primer uso)
 
     # ------------------------------------------------------------------
-    # Public API
+    # API pública
     # ------------------------------------------------------------------
 
     def build_and_start(
@@ -170,7 +170,7 @@ class DockerLifecycleService:
         )
 
     # ------------------------------------------------------------------
-    # Internal helpers
+    # Helpers internos
     # ------------------------------------------------------------------
 
     def _wait_for_healthy(
@@ -197,7 +197,7 @@ class DockerLifecycleService:
         normalized_path = health_path if health_path.startswith("/") else f"/{health_path}"
         url = f"{base_url.rstrip('/')}{normalized_path}"
 
-        # ── Phase 1: wait for the port to accept connections ──────────────────
+        # ── Fase 1: esperar a que el puerto acepte conexiones ─────────────────
         BIND_TIMEOUT = min(30, startup_timeout)
         bind_deadline = monotonic() + BIND_TIMEOUT
         server_up = False
@@ -208,12 +208,12 @@ class DockerLifecycleService:
                 with urlopen(Request(url, method="GET"), timeout=2.0) as resp:
                     if 200 <= resp.status < 300:
                         logger.info("Container '%s' is healthy.", full_image)
-                        return  # already healthy during phase 1 — done
-                    # Non-2xx but connection was made — go to phase 2
+                        return  # ya está sano durante la fase 1 — listo
+                    # Respuesta no-2xx pero hubo conexión — pasar a fase 2
                     server_up = True
                     break
             except HTTPError as exc:
-                # Server responded with 4xx/5xx — port is open
+                # El servidor respondió 4xx/5xx — el puerto está abierto
                 server_up = True
                 first_http_exc = exc
                 break
@@ -221,8 +221,8 @@ class DockerLifecycleService:
                 sleep(0.5)
 
         if not server_up:
-            # Port never accepted connections in the bind window →
-            # fall back to the standard wait for the remaining time.
+            # El puerto nunca aceptó conexiones en la ventana de arranque →
+            # usar la espera estándar durante el tiempo restante.
             remaining = max(10, startup_timeout - BIND_TIMEOUT)
             self._service.wait_for_health(
                 base_url=base_url,
@@ -231,16 +231,16 @@ class DockerLifecycleService:
             )
             return
 
-        # ── Phase 2: server is up — decide based on the HTTP status ──────────
-        # If we already have an HTTPError from phase 1, use it directly.
+        # ── Fase 2: el servidor responde — decidir según el estado HTTP ──────
+        # Si ya hay un HTTPError capturado en la fase 1, usarlo directamente.
         if first_http_exc is not None:
             self._raise_from_http_error(first_http_exc, full_image)
 
-        # Otherwise we got a non-2xx status via the context manager (shouldn't
-        # normally happen for 5xx with urllib, but handle defensively).
+        # Si no, se recibió un estado no-2xx vía context manager (raro para 5xx
+        # con urllib, pero se maneja de forma defensiva).
         #
-        # Wait up to startup_timeout for the backend to become healthy.
-        # This covers the case where the model is still loading weights.
+        # Esperar hasta startup_timeout a que el backend esté sano; cubre el
+        # caso en que el modelo todavía está cargando sus pesos.
         elapsed_bind = BIND_TIMEOUT
         remaining_timeout = max(10, startup_timeout - elapsed_bind)
         deadline = monotonic() + remaining_timeout
@@ -255,8 +255,8 @@ class DockerLifecycleService:
                         return
                     last_error = f"HTTP {resp.status}"
             except HTTPError as exc:
-                # Fail immediately for any HTTP error — the backend is telling us
-                # something is wrong (e.g. missing weights).
+                # Fallar de inmediato ante cualquier error HTTP — el backend está
+                # avisando que algo anda mal (p. ej. pesos faltantes).
                 self._raise_from_http_error(exc, full_image)
             except (URLError, OSError, socket.timeout, ConnectionRefusedError) as exc:
                 last_error = str(exc)
@@ -269,14 +269,14 @@ class DockerLifecycleService:
 
     @staticmethod
     def _raise_from_http_error(exc: HTTPError, full_image: str) -> None:
-        """Read the HTTP error body and raise DockerStartError with a clear message."""
+        """Lee el body del error HTTP y lanza DockerStartError con un mensaje claro."""
         try:
             body_bytes = exc.read()
             body = body_bytes.decode("utf-8", errors="replace").strip()
         except Exception:
             body = ""
 
-        # Try to extract the 'detail' field from the JSON body (FastAPI convention).
+        # Intentar extraer el campo 'detail' del body JSON (convención de FastAPI).
         detail: str = body
         if body:
             try:
@@ -292,6 +292,7 @@ class DockerLifecycleService:
         )
 
     def _build_image(self, install_path: Path, image_tag: str) -> None:
+        """Ejecuta ``docker build`` con el paquete extraído como contexto de construcción."""
         client = self._available_client()
         dockerfile_abs = install_path / self.DOCKERFILE_REL
         if not dockerfile_abs.exists():
@@ -314,6 +315,7 @@ class DockerLifecycleService:
             ) from exc
 
     def _available_client(self):
+        """Devuelve el cliente del SDK de Docker verificando que el daemon responda (ping)."""
         if docker_sdk is None:
             raise DockerBuildError(
                 "Docker SDK for Python ('docker') is not installed. "
@@ -335,14 +337,14 @@ class DockerLifecycleService:
     def _build_volumes(videos_dir: str | None) -> dict | None:
         if not videos_dir:
             return None
-        # Use the raw string as-is — do NOT resolve() or convert to a Linux Path.
-        # MIDDLEWARE_VIDEOS_DIR is a host path (possibly a Windows path like
-        # "C:/Users/…").  Calling Path().resolve() inside the Linux container would
-        # prepend the container CWD (/app), breaking Docker's bind-mount parser.
-        # Docker Desktop receives the raw string and translates it correctly to the
-        # Windows host filesystem.
+        # Usar la cadena cruda tal cual — NO aplicar resolve() ni convertir a
+        # Path de Linux.  MIDDLEWARE_VIDEOS_DIR es una ruta del HOST (puede ser
+        # de Windows, p. ej. "C:/Users/…").  Llamar a Path().resolve() dentro
+        # del contenedor Linux antepondría el CWD del contenedor (/app) y
+        # rompería el parser de bind mounts de Docker.  Docker Desktop recibe
+        # la cadena cruda y la traduce correctamente al filesystem de Windows.
         return {videos_dir: {"bind": "/data/videos", "mode": "ro"}}
 
 
-# Singleton used by ModelRegistryService
+# Singleton usado por ModelRegistryService
 docker_lifecycle_service = DockerLifecycleService()

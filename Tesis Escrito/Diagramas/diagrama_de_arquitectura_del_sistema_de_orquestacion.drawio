@@ -1,0 +1,67 @@
+<mxGraphModel dx="1572" dy="920" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+  <root>
+    <mxCell id="0" />
+    <mxCell id="1" parent="0" />
+    <mxCell id="YoY8pINq77z7AQ46m861-1" connectable="0" parent="1" style="group" value="" vertex="1">
+      <mxGeometry height="605" width="1120" x="30" y="15" as="geometry" />
+    </mxCell>
+    <mxCell id="host" parent="YoY8pINq77z7AQ46m861-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#555555;strokeWidth=3;              dashed=1;fontSize=12;fontStyle=1;verticalAlign=top;align=left;spacingLeft=12;arcSize=3;" value="&lt;font style=&quot;font-size: 16px;&quot;&gt;Máquina Anfitriona (Host)&lt;/font&gt;" vertex="1">
+      <mxGeometry height="605" width="1120" as="geometry" />
+    </mxCell>
+    <mxCell id="title" parent="YoY8pINq77z7AQ46m861-1" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=20;fontStyle=1;" value="Arquitectura General del Sistema de Orquestación ELAN–AI" vertex="1">
+      <mxGeometry height="38.21052631578947" width="992.9896907216495" x="57.7319587628866" y="31.842105263157897" as="geometry" />
+    </mxCell>
+    <mxCell id="elan" parent="YoY8pINq77z7AQ46m861-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;              strokeWidth=2;fontSize=13;verticalAlign=middle;" value="&lt;font style=&quot;font-size: 17px;&quot;&gt;&lt;b style=&quot;&quot;&gt;ELAN 7.1&lt;/b&gt;&lt;br&gt;Java 11&lt;br&gt;&lt;br&gt;Cliente de anotación&lt;br&gt;(Protocolo AVATecH)&lt;/font&gt;" vertex="1">
+      <mxGeometry height="203.78947368421055" width="219.38144329896906" x="34.639175257731964" y="171.94736842105266" as="geometry" />
+    </mxCell>
+    <mxCell id="mw" parent="YoY8pINq77z7AQ46m861-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;              strokeWidth=2;fontSize=13;verticalAlign=middle;" value="&lt;font style=&quot;font-size: 17px;&quot;&gt;&lt;b style=&quot;&quot;&gt;Middleware&lt;/b&gt;&lt;br&gt;Python 3.11 · FastAPI&lt;br&gt;[Contenedor Docker]&lt;br&gt;&lt;br&gt;API REST · Registro&lt;br&gt;Cola FIFO · Runner&lt;/font&gt;" vertex="1">
+      <mxGeometry height="203.78947368421055" width="242.47422680412373" x="432.9896907216495" y="171.94736842105266" as="geometry" />
+    </mxCell>
+    <mxCell id="backend" parent="YoY8pINq77z7AQ46m861-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;              strokeWidth=2;fontSize=13;verticalAlign=middle;" value="&lt;font style=&quot;font-size: 17px;&quot;&gt;&lt;b style=&quot;&quot;&gt;Contenedor Modelo&lt;/b&gt;&lt;br&gt;Docker · Python&lt;br&gt;&lt;br&gt;Pipeline IA (LSEc)&lt;br&gt;GET /health · POST /infer&lt;/font&gt;" vertex="1">
+      <mxGeometry height="203.78947368421055" width="230.9278350515464" x="842.8865979381443" y="171.94736842105266" as="geometry" />
+    </mxCell>
+    <mxCell id="dnet" parent="YoY8pINq77z7AQ46m861-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;              strokeWidth=2;fontSize=12;fontStyle=1;" value="&lt;font style=&quot;font-size: 17px;&quot;&gt;Red Docker: &lt;b style=&quot;&quot;&gt;elan-ai-shared&lt;/b&gt;  ·  DNS interno entre contenedores&lt;/font&gt;" vertex="1">
+      <mxGeometry height="76.42105263157895" width="692.7835051546391" x="381.03092783505156" y="477.63157894736844" as="geometry" />
+    </mxCell>
+    <mxCell id="daemon" parent="YoY8pINq77z7AQ46m861-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#555555;              strokeWidth=2;fontSize=12;fontStyle=1;" value="&lt;font style=&quot;font-size: 17px;&quot;&gt;Docker Engine (Host)&lt;/font&gt;" vertex="1">
+      <mxGeometry height="76.42105263157895" width="242.47422680412373" x="46.18556701030928" y="477.63157894736844" as="geometry" />
+    </mxCell>
+    <mxCell id="req" edge="1" parent="YoY8pINq77z7AQ46m861-1" source="elan" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#1050AF;strokeWidth=3;              fontStyle=1;fontSize=11;labelBackgroundColor=#ffffff;              exitX=1;exitY=0.25;entryX=0;entryY=0.25;exitX=1;exitDx=0;exitDy=0;entryDx=0;entryDy=0;" target="mw" value="&lt;font style=&quot;font-size: 16px;&quot;&gt;HTTP/1.1 + JSON&lt;br&gt;(localhost:8000)&lt;/font&gt;">
+      <mxGeometry relative="1" x="-0.0372" y="28" as="geometry">
+        <mxPoint as="offset" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="res" edge="1" parent="YoY8pINq77z7AQ46m861-1" source="mw" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#007700;strokeWidth=3;              fontStyle=1;fontSize=11;labelBackgroundColor=#ffffff;              exitX=0;exitY=0.75;entryX=1;entryY=0.75;exitX=0;exitDx=0;exitDy=0;entryDx=0;entryDy=0;" target="elan" value="&lt;font style=&quot;font-size: 16px;&quot;&gt;Segmentos&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 16px;&quot;&gt;temporales&lt;/font&gt;&lt;/div&gt;">
+      <mxGeometry relative="1" x="-0.0726" y="20" as="geometry">
+        <mxPoint as="offset" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="infer" edge="1" parent="YoY8pINq77z7AQ46m861-1" source="mw" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#d79b00;strokeWidth=3;              fontStyle=1;fontSize=11;labelBackgroundColor=#ffffff;              exitX=1;exitY=0.25;entryX=0;entryY=0.25;exitX=1;exitDx=0;exitDy=0;entryDx=0;entryDy=0;" target="backend" value="&lt;font style=&quot;font-size: 16px;&quot;&gt;POST /infer&amp;nbsp;&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 16px;&quot;&gt;(red Docker)&lt;/font&gt;&lt;/div&gt;">
+      <mxGeometry relative="1" x="0.1293" y="28" as="geometry">
+        <mxPoint as="offset" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="back" edge="1" parent="YoY8pINq77z7AQ46m861-1" source="backend" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#FF6600;strokeWidth=2;              fontStyle=1;fontSize=11;labelBackgroundColor=#ffffff;              exitX=0;exitY=0.75;entryX=1;entryY=0.75;exitX=0;exitDx=0;exitDy=0;entryDx=0;entryDy=0;" target="mw" value="&lt;font style=&quot;font-size: 16px;&quot;&gt;segments[]&amp;nbsp;&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 16px;&quot;&gt;+&amp;nbsp;&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 16px;&quot;&gt;predictions[]&lt;/font&gt;&lt;/div&gt;&lt;/div&gt;">
+      <mxGeometry relative="1" x="-0.1293" y="30" as="geometry">
+        <mxPoint as="offset" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="sdk" edge="1" parent="YoY8pINq77z7AQ46m861-1" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#888888;strokeWidth=2;dashed=1;              fontStyle=2;fontSize=11;labelBackgroundColor=#ffffff;" target="daemon" value="&lt;font style=&quot;font-size: 15px;&quot;&gt;docker-py SDK&lt;/font&gt;">
+      <mxGeometry relative="1" x="-0.2713" y="14" as="geometry">
+        <mxPoint as="offset" />
+        <Array as="points">
+          <mxPoint x="488.4123711340206" y="401.2105263157895" />
+          <mxPoint x="334.8453608247423" y="401.2105263157895" />
+          <mxPoint x="334.8453608247423" y="515.8421052631579" />
+        </Array>
+        <mxPoint x="488.4123711340206" y="375.7368421052632" as="sourcePoint" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="mwnet" edge="1" parent="YoY8pINq77z7AQ46m861-1" source="mw" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#9673a6;strokeWidth=2;              exitX=0.5;exitY=1;entryX=0.25;entryY=0;exitX=0.5;exitDx=0;exitDy=0;entryDx=0;entryDy=0;" target="dnet" value="">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="bknet" edge="1" parent="YoY8pINq77z7AQ46m861-1" source="backend" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#9673a6;strokeWidth=2;              exitX=0.5;exitY=1;entryX=0.833;entryY=0.067;entryDx=0;entryDy=0;entryPerimeter=0;" target="dnet" value="">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+  </root>
+</mxGraphModel>

@@ -1,0 +1,31 @@
+sequenceDiagram
+    autonumber
+    actor U as Investigador
+    participant ELAN as ELAN (Java)
+    participant MW as Middleware (FastAPI)
+    participant CT as Modelo de IA<br/>(contenedor Docker)
+
+    U->>ELAN: Selecciona el modelo y el video,<br/>e inicia el reconocedor
+    ELAN->>MW: POST /api/v1/jobs/segment-video<br/>(video, modelo y tier de destino)
+
+    Note over MW: RECEIVED → VALIDATING<br/>Comprueba que el modelo exista<br/>y esté disponible
+
+    Note over MW: VALIDATING → PREPROCESSING<br/>Prepara los datos que el modelo<br/>necesita (video y parámetros)
+
+    Note over MW: PREPROCESSING → QUEUED<br/>El trabajo espera su turno en la cola
+
+    Note over MW: QUEUED → RUNNING
+    MW->>CT: Verifica o levanta el contenedor del modelo
+    MW->>CT: Consulta si el modelo está listo (GET /health)
+    CT-->>MW: Listo (HTTP 200)
+
+    MW->>CT: Solicita la inferencia (POST /infer)<br/>(video, tier y parámetros)
+    CT-->>MW: Devuelve los segmentos detectados<br/>(media_info y segments)
+
+    Note over MW: RUNNING → POSTPROCESSING<br/>Revisa que la respuesta esté<br/>completa y sea válida
+
+    Note over MW: POSTPROCESSING → COMPLETED
+    MW-->>ELAN: HTTP 200 (status, segments y trace)
+
+    ELAN->>ELAN: Convierte cada segmento en una anotación<br/>(inicio, fin y etiqueta)
+    ELAN->>U: Anotaciones insertadas en el tier seleccionado

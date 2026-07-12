@@ -1,3 +1,4 @@
+# Excluir del contexto de build todo lo que la imagen no necesita.
 .venv*
 __pycache__/
 *.py[cod]
@@ -5,7 +6,8 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
+# Registry generado en ejecuciones locales (la imagen no debe incluirlo).
 app/models_store/registry.json
 
+# Documentación: no forma parte de la imagen.
 docs/
-examples/docker_model_backend/.venv*

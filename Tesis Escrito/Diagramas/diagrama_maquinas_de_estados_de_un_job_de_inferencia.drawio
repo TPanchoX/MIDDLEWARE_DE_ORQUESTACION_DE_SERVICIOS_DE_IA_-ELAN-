@@ -1,0 +1,165 @@
+<mxGraphModel dx="929" dy="544" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+  <root>
+    <mxCell id="0" />
+    <mxCell id="1" parent="0" />
+    <mxCell id="OVIUMu0KgMs9VMXLtbt_-2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="" vertex="1">
+      <mxGeometry height="795" width="690" x="70" y="55" as="geometry" />
+    </mxCell>
+    <mxCell id="start" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;fontSize=13;" value="" vertex="1">
+      <mxGeometry height="30" width="30" x="414" y="70" as="geometry" />
+    </mxCell>
+    <mxCell id="s_received" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=13;" value="RECEIVED" vertex="1">
+      <mxGeometry height="45" width="130" x="364" y="140" as="geometry" />
+    </mxCell>
+    <mxCell id="s_validating" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=13;" value="VALIDATING" vertex="1">
+      <mxGeometry height="45" width="130" x="364" y="235" as="geometry" />
+    </mxCell>
+    <mxCell id="s_preprocessing" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=13;" value="PREPROCESSING" vertex="1">
+      <mxGeometry height="45" width="130" x="364" y="330" as="geometry" />
+    </mxCell>
+    <mxCell id="s_queued" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=13;" value="QUEUED" vertex="1">
+      <mxGeometry height="45" width="130" x="364" y="425" as="geometry" />
+    </mxCell>
+    <mxCell id="s_running" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=13;" value="RUNNING" vertex="1">
+      <mxGeometry height="45" width="130" x="364" y="520" as="geometry" />
+    </mxCell>
+    <mxCell id="s_postprocessing" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=13;" value="POSTPROCESSING" vertex="1">
+      <mxGeometry height="45" width="130" x="364" y="615" as="geometry" />
+    </mxCell>
+    <mxCell id="s_completed" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=13;" value="COMPLETED" vertex="1">
+      <mxGeometry height="45" width="130" x="364" y="710" as="geometry" />
+    </mxCell>
+    <mxCell id="s_timeout" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;fontSize=13;" value="TIMEOUT" vertex="1">
+      <mxGeometry height="45" width="130" x="610" y="330" as="geometry" />
+    </mxCell>
+    <mxCell id="s_failed" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=13;" value="FAILED" vertex="1">
+      <mxGeometry height="45" width="130" x="610" y="615" as="geometry" />
+    </mxCell>
+    <mxCell id="end_ok" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;fontSize=13;" value="" vertex="1">
+      <mxGeometry height="30" width="30" x="414" y="795" as="geometry" />
+    </mxCell>
+    <mxCell id="end_ok_ring" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;strokeWidth=3;fontSize=13;" value="" vertex="1">
+      <mxGeometry height="44" width="44" x="407" y="788" as="geometry" />
+    </mxCell>
+    <mxCell id="end_timeout" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;fontSize=13;" value="" vertex="1">
+      <mxGeometry height="30" width="30" x="660" y="407" as="geometry" />
+    </mxCell>
+    <mxCell id="end_timeout_ring" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;strokeWidth=3;fontSize=13;" value="" vertex="1">
+      <mxGeometry height="44" width="44" x="653" y="400" as="geometry" />
+    </mxCell>
+    <mxCell id="end_failed" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;fontSize=13;" value="" vertex="1">
+      <mxGeometry height="30" width="30" x="660" y="697" as="geometry" />
+    </mxCell>
+    <mxCell id="end_failed_ring" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;strokeWidth=3;fontSize=13;" value="" vertex="1">
+      <mxGeometry height="44" width="44" x="653" y="690" as="geometry" />
+    </mxCell>
+    <mxCell id="e1" edge="1" parent="1" source="start" style="edgeStyle=orthogonalEdgeStyle;fontSize=13;" target="s_received" value="">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="e2" edge="1" parent="1" source="s_received" style="edgeStyle=orthogonalEdgeStyle;fontSize=13;" target="s_validating" value="solicitud aceptada">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="e3" edge="1" parent="1" source="s_validating" style="edgeStyle=orthogonalEdgeStyle;fontSize=13;" target="s_preprocessing" value="modelo disponible">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="e4" edge="1" parent="1" source="s_preprocessing" style="edgeStyle=orthogonalEdgeStyle;fontSize=13;" target="s_queued" value="datos preparados">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="e5" edge="1" parent="1" source="s_queued" style="edgeStyle=orthogonalEdgeStyle;fontSize=13;" target="s_running" value="turno asignado">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="e6" edge="1" parent="1" source="s_running" style="edgeStyle=orthogonalEdgeStyle;fontSize=13;" target="s_postprocessing" value="el modelo responde">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="e7" edge="1" parent="1" source="s_postprocessing" style="edgeStyle=orthogonalEdgeStyle;fontSize=13;" target="s_completed" value="respuesta verificada">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="e8" edge="1" parent="1" source="s_completed" style="edgeStyle=orthogonalEdgeStyle;fontSize=13;" value="">
+      <mxGeometry relative="1" as="geometry">
+        <mxPoint x="429" y="790" as="targetPoint" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="ev_f" edge="1" parent="1" source="s_validating" style="edgeStyle=orthogonalEdgeStyle;fontSize=13;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="s_failed" value="modelo no disponible">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="775" y="257" />
+          <mxPoint x="775" y="637" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="er_t" edge="1" parent="1" source="s_running" style="edgeStyle=orthogonalEdgeStyle;fontSize=13;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="s_timeout" value="se agota el tiempo límite">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="560" y="531" />
+          <mxPoint x="560" y="352" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="er_f" edge="1" parent="1" source="s_running" style="edgeStyle=orthogonalEdgeStyle;fontSize=13;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" target="s_failed" value="error de ejecución">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="590" y="554" />
+          <mxPoint x="590" y="626" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="ep_f" edge="1" parent="1" source="s_postprocessing" style="edgeStyle=orthogonalEdgeStyle;fontSize=13;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="s_failed" value="respuesta inválida">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="et_end" edge="1" parent="1" source="s_timeout" style="edgeStyle=orthogonalEdgeStyle;fontSize=13;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" value="">
+      <mxGeometry relative="1" as="geometry">
+        <mxPoint x="675" y="402" as="targetPoint" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="ef_end" edge="1" parent="1" source="s_failed" style="edgeStyle=orthogonalEdgeStyle;fontSize=13;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" value="">
+      <mxGeometry relative="1" as="geometry">
+        <mxPoint x="675" y="692" as="targetPoint" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="note_received" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#666666;" value="El middleware recibe la solicitud de ELAN y la registra" vertex="1">
+      <mxGeometry height="40" width="220" x="90" y="143" as="geometry" />
+    </mxCell>
+    <mxCell id="note_validating" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#666666;" value="Comprueba que el modelo de IA solicitado exista y esté disponible" vertex="1">
+      <mxGeometry height="40" width="220" x="90" y="238" as="geometry" />
+    </mxCell>
+    <mxCell id="note_preprocessing" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#666666;" value="Prepara los datos que el modelo necesita (video y parámetros)" vertex="1">
+      <mxGeometry height="40" width="220" x="90" y="333" as="geometry" />
+    </mxCell>
+    <mxCell id="note_queued" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#666666;" value="El trabajo espera su turno; se atienden en orden de llegada y solo un número limitado se ejecuta a la vez" vertex="1">
+      <mxGeometry height="55" width="230" x="90" y="420" as="geometry" />
+    </mxCell>
+    <mxCell id="note_running" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#666666;" value="El modelo de IA analiza el video y genera los segmentos" vertex="1">
+      <mxGeometry height="40" width="220" x="90" y="523" as="geometry" />
+    </mxCell>
+    <mxCell id="note_postprocessing" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#666666;" value="Revisa que la respuesta del modelo esté completa y sea válida" vertex="1">
+      <mxGeometry height="40" width="220" x="90" y="618" as="geometry" />
+    </mxCell>
+    <mxCell id="note_completed" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#666666;" value="Los segmentos quedan listos para ELAN, junto con los tiempos de cada etapa" vertex="1">
+      <mxGeometry height="40" width="220" x="90" y="713" as="geometry" />
+    </mxCell>
+    <mxCell id="note_error" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#666666;" value="Si el trabajo falla o expira, ELAN recibe un mensaje con el motivo" vertex="1">
+      <mxGeometry height="40" width="180" x="580" y="765" as="geometry" />
+    </mxCell>
+    <mxCell id="ln1" edge="1" parent="1" source="note_received" style="edgeStyle=none;dashed=1;strokeColor=#AAAAAA;fontSize=13;" target="s_received" value="">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="ln2" edge="1" parent="1" source="note_validating" style="edgeStyle=none;dashed=1;strokeColor=#AAAAAA;fontSize=13;" target="s_validating" value="">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="ln3" edge="1" parent="1" source="note_preprocessing" style="edgeStyle=none;dashed=1;strokeColor=#AAAAAA;fontSize=13;" target="s_preprocessing" value="">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="ln4" edge="1" parent="1" source="note_queued" style="edgeStyle=none;dashed=1;strokeColor=#AAAAAA;fontSize=13;" target="s_queued" value="">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="ln5" edge="1" parent="1" source="note_running" style="edgeStyle=none;dashed=1;strokeColor=#AAAAAA;fontSize=13;" target="s_running" value="">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="ln6" edge="1" parent="1" source="note_postprocessing" style="edgeStyle=none;dashed=1;strokeColor=#AAAAAA;fontSize=13;" target="s_postprocessing" value="">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="ln7" edge="1" parent="1" source="note_completed" style="edgeStyle=none;dashed=1;strokeColor=#AAAAAA;fontSize=13;" target="s_completed" value="">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+  </root>
+</mxGraphModel>

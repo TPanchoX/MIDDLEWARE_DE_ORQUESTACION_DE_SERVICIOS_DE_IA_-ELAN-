@@ -1,22 +1,21 @@
-# Python cache
+# Caché de Python
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
 .Python
 
-# Virtual environments
+# Entornos virtuales
 .venv/
+.venv*/
 venv/
 env/
 
-# Installed model packages (big files; restored by reinstalling the ZIP)
+# Paquetes de modelo instalados en ejecuciones locales
+# (archivos grandes; se restauran reinstalando el ZIP)
 app/models_store/installed/*/
 
-# Model package ZIPs (rebuilt on demand)
-model_packages/*.zip
-
-# Pytest / coverage
+# Pytest / cobertura
 .pytest_cache/
 .coverage
 htmlcov/
@@ -27,9 +26,9 @@ htmlcov/
 *.swp
 *.swo
 
-# OS
+# Sistema operativo
 .DS_Store
 Thumbs.db
 
-# Docker
+# Logs
 *.log
